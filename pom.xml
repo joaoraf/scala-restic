@@ -14,6 +14,7 @@
     <zio-config.version>4.0.7</zio-config.version>
     <zio-logging.version>2.5.3</zio-logging.version>
     <zio-process.version>0.8.0</zio-process.version>
+    <zio-schema.version>1.8.5</zio-schema.version>
   </properties>
   <build>
     <plugins>
@@ -137,6 +138,21 @@
       <artifactId>zio-logging-slf4j_${scala.compat.version}</artifactId>
       <version>${zio-logging.version}</version>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>dev.zio</groupId>
+      <artifactId>zio-schema_${scala.compat.version}</artifactId>
+      <version>${zio-schema.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>dev.zio</groupId>
+      <artifactId>zio-schema-json_${scala.compat.version}</artifactId>
+      <version>${zio-schema.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>dev.zio</groupId>
+      <artifactId>zio-schema-derivation_${scala.compat.version}</artifactId>
+      <version>${zio-schema.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.logging.log4j</groupId>
