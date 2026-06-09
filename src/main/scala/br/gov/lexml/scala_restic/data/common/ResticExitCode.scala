@@ -1,5 +1,7 @@
 package br.gov.lexml.scala_restic.data.common
 
+import zio.ExitCode
+
 enum ResticExitCode(val ec : Int):
   case REC_SUCCESS extends ResticExitCode(0)
   case REC_FAILURE extends ResticExitCode(1)
@@ -23,3 +25,5 @@ object ResticExitCode:
     case REC_INTERRUPTED.ec => REC_INTERRUPTED
     case _ => REC_OTHER(ec)
   }
+  extension (ex : ExitCode)
+    def asRestic : ResticExitCode = ResticExitCode(ex.code)

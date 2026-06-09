@@ -1,5 +1,6 @@
 package br.gov.lexml.scala_restic.options.backup
 
+import br.gov.lexml.scala_restic.options.ResticOptionSource
 import br.gov.lexml.scala_restic.options.common.SizeUnit
 import zio.Chunk
 
@@ -39,7 +40,7 @@ final case class BackupOptions(
                                 tag : List[String] = List(),
                                 time : Option[ZonedDateTime] = None,
                                 withAtime : Boolean = false
-                              ):
+                              ) extends ResticOptionSource:
   def toArgs : Chunk[String] =
     val b = Chunk.newBuilder[String]
     if(dryRun) then b += "--dry-run" else ()

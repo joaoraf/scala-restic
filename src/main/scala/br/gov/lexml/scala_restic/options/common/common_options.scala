@@ -1,5 +1,6 @@
 package br.gov.lexml.scala_restic.options.common
 
+import br.gov.lexml.scala_restic.options.ResticOptionSource
 import br.gov.lexml.scala_restic.options.common.CompressionMode.AUTO
 
 import java.nio.file.Path
@@ -23,6 +24,20 @@ object DurationExtensions:
   extension (d : Duration)
     def toResticArg = d.toString.substring(2).toLowerCase
 
+enum Repo:
+  case R_LOCATION(location : String)
+  case R_FILE(file : Path)
+
+  def toArgs : Chunk[String] = this match
+    case R_LOCATION(location) => Chunk(s"--repo=$location")
+    case R_FILE(file) => Chunk(s"--repository-file=$file")
+object Repo:
+  def atURI(repoURI : java.net.URI) : Repo = R_LOCATION(repoURI.toString)
+  def atFolder(repoPath : java.io.File) : Repo = R_LOCATION(repoPath.toString)
+  def atFolder(repoPath : Path) : Repo = R_LOCATION(repoPath.toString)
+  def atLocation(repo : String) : Repo = R_LOCATION(repo)
+  def fromFile(repo : Path) : Repo = R_FILE(repo)
+
 final case class CommonOptions(
                               caCert : List[Path] = List(),
                               cacheDir : Option[Path] = None,
@@ -32,7 +47,7 @@ final case class CommonOptions(
                               insecureNoPassword : Boolean = false,
                               insecureTLS : Boolean = false,
                               json : Boolean = true,
-                              keyHint : String,
+                              keyHint : String = "",
                               limitDownloadKbps : Double = 0.0,
                               limitUploadKbps : Double = 0.0,
                               noCache : Boolean = false,
@@ -43,13 +58,12 @@ final case class CommonOptions(
                               passwordCommand : String = "",
                               passwordFile : Option[Path] = None,
                               quiet : Boolean = false,
-                              repo : String,
-                              repositoryFile : Option[Path] = None,
                               retryLock : Duration = Duration.ZERO,
                               stuckRequestTimeout : Duration = Duration.ofMinutes(5),
                               tlsClientCert : Option[Path] = None,
                               verbose : Int = 0
-                              ):
+                              ) extends ResticOptionSource:
+  def withJson: CommonOptions = if !json then copy(json = true) else this
   def toArgs : Chunk[String] =
     import DurationExtensions.*
     val b = Chunk.newBuilder[String]
@@ -72,8 +86,6 @@ final case class CommonOptions(
     if(passwordCommand.nonEmpty) then b += s"--password-command=$passwordCommand" else ()
     if(passwordFile.isDefined) then b += s"--password-file=$passwordFile" else ()
     if(quiet) then b += "--quiet" else ()
-    if(repo.nonEmpty) then b += s"--repo=$repo" else ()
-    if(repositoryFile.isDefined) then b += s"--repository-file=$repositoryFile" else ()
     if(retryLock.toMillis > 0) then b += s"--retry-lock=${retryLock.toResticArg}" else ()
     b.result()
 
