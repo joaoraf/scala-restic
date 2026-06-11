@@ -9,8 +9,9 @@ import zio.stream.*
 
 import java.nio.file.Path
 
-trait ResticRepository:
+trait ResticRepository /*:
   def repoExists : ZIO[Any,Exception,Boolean]
   def init : ZIO[Any,Exception,Unit]
   def backup(backupOptions : BackupOptions = BackupOptions(),paths : Path*) : ZIO[Any,Exception,ZStream[Any,Exception,BackupMessage]]
   def restore(restoreOptions : RestoreOptions = RestoreOptions(), snapshotId : String) : ZIO[Any,Exception,ZStream[Any,Exception,RestoreMessage]]
+  */

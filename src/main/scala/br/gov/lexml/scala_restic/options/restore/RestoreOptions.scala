@@ -1,5 +1,6 @@
 package br.gov.lexml.scala_restic.options.restore
 
+import br.gov.lexml.scala_restic.options.ResticOptionSource
 import br.gov.lexml.scala_restic.options.common.SizeUnit
 import zio.Chunk
 
@@ -37,8 +38,8 @@ final case class RestoreOptions(
                                 tag : List[String] = List(),
                                 target : Option[Path] = None,
                                 verify : Boolean = false,
-                               ):
-  def toArgs : Chunk[String] =
+                               ) extends ResticOptionSource:
+  override def toArgs : Chunk[String] =
     val b = Chunk.newBuilder[String]
     if(delete) then b += "--delete" else ()
     if(dryRun) then b += "--dry-run" else ()
@@ -57,6 +58,6 @@ final case class RestoreOptions(
     if(path.nonEmpty) then b ++= path.map(e => s"--path=$e") else ()
     if(sparse) then b += "--sparse" else ()
     if(tag.nonEmpty) then b ++= tag.map(e => s"--tag=$e") else ()
-    if(target.isDefined) then b += s"--target=$target" else ()
+    if(target.isDefined) then b += s"--target=${target.get}" else ()
     if(verify) then b += "--verify" else ()
     b.result()

@@ -84,8 +84,7 @@ final case class CommonOptions(
     if(option.nonEmpty) then b ++= option.map((k,v) => s"--$k=$v") else ()
     if(packSizeMB > 0.0) then b += s"--pack-size=$packSizeMB" else ()
     if(passwordCommand.nonEmpty) then b += s"--password-command=$passwordCommand" else ()
-    if(passwordFile.isDefined) then b += s"--password-file=$passwordFile" else ()
+    if(passwordFile.isDefined) then b += s"--password-file=${passwordFile.get}" else ()
     if(quiet) then b += "--quiet" else ()
     if(retryLock.toMillis > 0) then b += s"--retry-lock=${retryLock.toResticArg}" else ()
     b.result()
-

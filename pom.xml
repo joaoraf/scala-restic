@@ -70,6 +70,16 @@
           </gitFlowConfig>
         </configuration>
       </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.4</version>
+        <configuration>
+          <includes>
+            <include>**/*Spec.class</include>
+          </includes>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
   <dependencies>
@@ -94,6 +104,18 @@
       <groupId>dev.zio</groupId>
       <artifactId>zio-streams_${scala.compat.version}</artifactId>
       <version>${zio.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>dev.zio</groupId>
+      <artifactId>zio-test_${scala.compat.version}</artifactId>
+      <version>${zio.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>dev.zio</groupId>
+      <artifactId>zio-test-junit_${scala.compat.version}</artifactId>
+      <version>${zio.version}</version>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.scala-lang</groupId>
@@ -160,5 +182,6 @@
       <version>2.19.0</version>
       <scope>test</scope>
     </dependency>
+
   </dependencies>
 </project>

@@ -58,5 +58,11 @@ enum RestoreMessage:
       bytes_restored : Long = 0L,
       bytes_skipped : Long = 0L
       )
-  
-  
+
+object RestoreMessage:
+  given schema: Schema[RestoreMessage] = DeriveSchema.gen[RestoreMessage]
+  given jsonCodec: ZJsonCodec[RestoreMessage] = JsonCodec.jsonCodec(schema)
+
+  val jsonDecoderPipeline : ZPipeline[Any,Exception,String,RestoreMessage] =
+    ZPipeline.mapEitherChunked(jsonCodec.decodeJson)
+      .mapError(e => new Exception(s"Error decoding restore message: $e"))  

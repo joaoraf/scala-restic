@@ -5,10 +5,14 @@ import br.gov.lexml.scala_restic.data.backup.BackupMessage
 import br.gov.lexml.scala_restic.data.common.ResticExitCode
 import br.gov.lexml.scala_restic.data.common.ResticExitCode.{REC_INEXISTENT_REPO, REC_SUCCESS, asRestic}
 import br.gov.lexml.scala_restic.data.init.InitResult
+import br.gov.lexml.scala_restic.data.restore.RestoreMessage
+import br.gov.lexml.scala_restic.data.snapshots.Snapshots
 import br.gov.lexml.scala_restic.options.ResticOptionSource
 import br.gov.lexml.scala_restic.options.backup.BackupOptions
 import br.gov.lexml.scala_restic.options.common.{CommonOptions, Repo}
 import br.gov.lexml.scala_restic.options.init.InitOptions
+import br.gov.lexml.scala_restic.options.restore.RestoreOptions
+import br.gov.lexml.scala_restic.options.snapshots.SnapshotsOptions
 import zio.*
 import zio.stream.*
 import zio.process.*
@@ -42,7 +46,7 @@ final case class ResticCommandBuilder(
       case t : Throwable => CommandError.Error(t)
     }
     Command.Standard(
-      command = NonEmptyChunk.apply(config.resticExecutablePath.toString, (repo.toArgs ++ args ++ opts)*),
+      command = NonEmptyChunk.apply(config.resticExecutablePath.toString, (repo.toArgs ++ opts ++ args)*),
       env = Map(),
       workingDirectory = workingDirectory,
       stdin = ProcessInput.fromStream(stdin1),
@@ -79,6 +83,7 @@ final class ResticCommandService(rb : ResticCommandBuilderService):
     for {
       process <- rb.commandBuilder(repo)
         .options(commonOptions.withJson)
+        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x)))
         .options(initOptions)
         .command("init")
         .run
@@ -103,6 +108,7 @@ final class ResticCommandService(rb : ResticCommandBuilderService):
         .options(commonOptions.withJson)
         .options(backupOptions)
         .args(paths.map(_.toString) *)
+        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x)))
         .command("backup")
         .redirectErrorStream(true)
         .run
@@ -133,6 +139,65 @@ final class ResticCommandService(rb : ResticCommandBuilderService):
       }.some.mapError(e => ResticException(s"Error getting backup summary: $e"))
     } yield res
 
+  def restoreStream(
+    repo: Repo,
+    commonOptions: CommonOptions = CommonOptions(),
+    restoreOptions: RestoreOptions = RestoreOptions(),
+    password: Option[String] = None,
+    snapshotID: String
+  ): IO[Exception, ZStream[Any, Exception, RestoreMessage]] =
+    for {
+      process <- rb.commandBuilder(repo)
+        .options(commonOptions.withJson)
+        .options(restoreOptions)
+        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x)))
+        .args(snapshotID)
+        .command("restore")
+        .redirectErrorStream(true)
+        .run
+
+      summaryPromise <- Promise.make[Nothing, RestoreMessage.Summary]
+      outStream =
+        process.stdout.linesStream.via(RestoreMessage.jsonDecoderPipeline)
+      streamTail = ZStream.unwrap {
+        process.exitCode.map(_.asRestic).flatMap {
+          case REC_SUCCESS => ZIO.succeed(ZStream.empty)
+          case ec => ZIO.fail(ResticException("Error in backup process", exitCode = Some(ec)))
+        }
+      }
+    } yield outStream ++ streamTail
+  end restoreStream
+
+  def restoreSummary(
+    repo: Repo,
+    commonOptions: CommonOptions = CommonOptions(),
+    restoreOptions: RestoreOptions = RestoreOptions(),
+    password: Option[String] = None,
+    snapshotID : String
+  ): IO[Exception, RestoreMessage.Summary] =
+    for {
+      stream <- restoreStream(repo, commonOptions, restoreOptions, password, snapshotID)
+      res <- stream.runFold[Option[RestoreMessage.Summary]](None) {
+        case (_, m: RestoreMessage.Summary) => Some(m)
+        case (x, _) => x
+      }.some.mapError(e => ResticException(s"Error getting restore summary: $e"))
+    } yield res
+
+  def snapshots(repo: Repo, commonOptions: CommonOptions = CommonOptions()
+        , snapshotsOptions : SnapshotsOptions, password: Option[String] = None): IO[Exception, Snapshots] =
+    for {
+      process <- rb.commandBuilder(repo)
+        .options(commonOptions.withJson)
+        .options(snapshotsOptions)
+        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x)))
+        .command("snapshots")
+        .redirectErrorStream(true)
+        .run
+      result <- process.stdout.string
+      ec <- process.exitCode.map(n => n.asRestic)
+      _ <- ZIO.fail(ResticException("Error getting snapshots", Some(ec))).when(ec != REC_SUCCESS)
+      res <- ZIO.fromEither(Snapshots.jsonCodec.decodeJson(result)).mapError(msg => ResticException(s"Error decoding snapshots output: $msg"))
+    } yield res
 
 
 
