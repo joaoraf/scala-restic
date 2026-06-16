@@ -1,6 +1,6 @@
-<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36" version="29.3.8" pages="2">
-  <diagram name="Page-1" id="c7558073-3199-34d8-9f00-42111426c3f3">
-    <mxGraphModel dx="2906" dy="1342" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" background="none" math="0" shadow="0">
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36" pages="3">
+  <diagram name="Backup/Restore Initialization" id="c7558073-3199-34d8-9f00-42111426c3f3">
+    <mxGraphModel dx="2702" dy="1173" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" background="none" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -236,8 +236,8 @@
       </root>
     </mxGraphModel>
   </diagram>
-  <diagram name="Cópia do Page-1" id="EW-fcCIJSdNsuxsd5UL9">
-    <mxGraphModel dx="2594" dy="1141" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" background="none" math="0" shadow="0">
+  <diagram name="Restore Only Initialization" id="EW-fcCIJSdNsuxsd5UL9">
+    <mxGraphModel dx="2307" dy="926" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" background="none" math="0" shadow="0">
       <root>
         <mxCell id="QeDE15xVJD5zBl4c5M1G-0" />
         <mxCell id="QeDE15xVJD5zBl4c5M1G-1" parent="QeDE15xVJD5zBl4c5M1G-0" />
@@ -353,6 +353,98 @@
           <mxGeometry relative="1" x="-0.9459" y="-3" as="geometry">
             <mxPoint as="offset" />
           </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="Backup/Restore State Machine" id="f6um3LaAX98A9jo0dZhT">
+    <mxGraphModel dx="2307" dy="926" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="Aoq1pm68hmU5PU5Sy6oP-0" />
+        <mxCell id="Aoq1pm68hmU5PU5Sy6oP-1" parent="Aoq1pm68hmU5PU5Sy6oP-0" />
+        <mxCell id="Aoq1pm68hmU5PU5Sy6oP-24" parent="Aoq1pm68hmU5PU5Sy6oP-1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontSize=20;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fontStyle=4" value="Backup/Restore backup state machine" vertex="1">
+          <mxGeometry height="30" width="540" x="-704.5" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="Aoq1pm68hmU5PU5Sy6oP-27" edge="1" parent="Aoq1pm68hmU5PU5Sy6oP-1" style="edgeStyle=none;curved=1;rounded=0;sketch=1;hachureGap=4;jiggle=2;curveFitting=1;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.072;entryY=0.698;entryDx=0;entryDy=0;entryPerimeter=0;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fontSize=16;startSize=14;endArrow=open;endSize=14;sourcePerimeterSpacing=8;targetPerimeterSpacing=8;" target="Aoq1pm68hmU5PU5Sy6oP-23">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="-1000" y="570" />
+            </Array>
+            <mxPoint x="-483.5365267404927" y="196.08979311528856" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-2" edge="1" parent="Aoq1pm68hmU5PU5Sy6oP-1" source="UgEsJRaeuE8F_pdDXvF1-0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="-413" y="250" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-3" connectable="0" parent="UgEsJRaeuE8F_pdDXvF1-2" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="schedule backup signal" vertex="1">
+          <mxGeometry relative="1" x="-0.2421" y="2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-13" edge="1" parent="Aoq1pm68hmU5PU5Sy6oP-1" source="UgEsJRaeuE8F_pdDXvF1-0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="UgEsJRaeuE8F_pdDXvF1-5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="-300" y="150" />
+              <mxPoint x="-300" y="325" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-14" connectable="0" parent="UgEsJRaeuE8F_pdDXvF1-13" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="unscheduled backup request" vertex="1">
+          <mxGeometry relative="1" x="-0.7225" y="5" as="geometry">
+            <mxPoint x="41" y="-15" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-0" parent="Aoq1pm68hmU5PU5Sy6oP-1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="Idle" vertex="1">
+          <mxGeometry height="80" width="80" x="-453" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-8" edge="1" parent="Aoq1pm68hmU5PU5Sy6oP-1" source="UgEsJRaeuE8F_pdDXvF1-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="UgEsJRaeuE8F_pdDXvF1-7" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-5" parent="Aoq1pm68hmU5PU5Sy6oP-1" style="rounded=0;whiteSpace=wrap;html=1;" value="start backup" vertex="1">
+          <mxGeometry height="30" width="120" x="-473" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-11" edge="1" parent="Aoq1pm68hmU5PU5Sy6oP-1" source="UgEsJRaeuE8F_pdDXvF1-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="UgEsJRaeuE8F_pdDXvF1-0">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="-550" y="420" />
+              <mxPoint x="-550" y="150" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-12" connectable="0" parent="UgEsJRaeuE8F_pdDXvF1-11" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="success" vertex="1">
+          <mxGeometry relative="1" x="-0.69" y="-4" as="geometry">
+            <mxPoint x="35" y="-16" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-16" edge="1" parent="Aoq1pm68hmU5PU5Sy6oP-1" source="UgEsJRaeuE8F_pdDXvF1-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="UgEsJRaeuE8F_pdDXvF1-15" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-18" connectable="0" parent="UgEsJRaeuE8F_pdDXvF1-16" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="failure" vertex="1">
+          <mxGeometry relative="1" x="-0.1421" as="geometry">
+            <mxPoint x="23" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-7" parent="Aoq1pm68hmU5PU5Sy6oP-1" style="ellipse;whiteSpace=wrap;html=1;rounded=0;" value="In backup" vertex="1">
+          <mxGeometry height="80" width="80" x="-453" y="380" as="geometry" />
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-10" edge="1" parent="Aoq1pm68hmU5PU5Sy6oP-1" source="UgEsJRaeuE8F_pdDXvF1-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="UgEsJRaeuE8F_pdDXvF1-5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-9" parent="Aoq1pm68hmU5PU5Sy6oP-1" style="rounded=0;whiteSpace=wrap;html=1;" value="reschedule backup" vertex="1">
+          <mxGeometry height="30" width="120" x="-473" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-17" edge="1" parent="Aoq1pm68hmU5PU5Sy6oP-1" source="UgEsJRaeuE8F_pdDXvF1-15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="UgEsJRaeuE8F_pdDXvF1-0">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="-600" y="530" />
+              <mxPoint x="-600" y="150" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="UgEsJRaeuE8F_pdDXvF1-15" parent="Aoq1pm68hmU5PU5Sy6oP-1" style="whiteSpace=wrap;html=1;rounded=0;" value="Log Backup Failue" vertex="1">
+          <mxGeometry height="60" width="120" x="-473" y="500" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
