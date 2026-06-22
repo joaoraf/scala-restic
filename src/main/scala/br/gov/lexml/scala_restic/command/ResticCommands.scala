@@ -20,33 +20,39 @@ import zio.process.*
 import java.io.{File, IOException}
 import java.nio.file.Path
 
-final case class ResticException(str: String, exitCode: Option[ResticExitCode] = None,cause : Throwable = null)
-  extends Exception(exitCode.fold(str)(ec => s"$str (exit code: $ec)"),cause)
+final case class ResticException(str: String, exitCode: Option[ResticExitCode] = None, cause: Throwable = null)
+  extends Exception(exitCode.fold(str)(ec => s"$str (exit code: $ec)"), cause)
 
 final case class ResticCommandBuilder(
-  config : ResticConfig,
-  repo : Repo,
-  workingDirectory : Option[File] = None,
-  stdin : ZStream[Any, Exception, Byte] = ZStream.empty,
+  config: ResticConfig,
+  repo: Repo,
+  workingDirectory: Option[File] = None,
+  stdin: ZStream[Any, Exception, Byte] = ZStream.empty,
   stdinFlushChunksEagerly: Boolean = false,
-  redirectErrorStream : Boolean = false,
-  args : Chunk[String] = Chunk.empty
+  redirectErrorStream: Boolean = false,
+  args: Chunk[String] = Chunk.empty
 ):
-  def workingDirectory(wd : File): ResticCommandBuilder = copy(workingDirectory = Some(wd))
-  def stdinLinesUTF8(lines : String*): ResticCommandBuilder =
-    stdinStringStream(ZStream(lines.map(_ + System.lineSeparator)*))
-  def stdinByteStream(stream : ZStream[Any,Exception,Byte]): ResticCommandBuilder = copy(stdin = stream)
-  def stdinStringStream(stream : ZStream[Any,Exception,String]): ResticCommandBuilder =
+  def workingDirectory(wd: File): ResticCommandBuilder = copy(workingDirectory = Some(wd))
+
+  def stdinLinesUTF8(lines: String*): ResticCommandBuilder =
+    stdinStringStream(ZStream(lines.map(_ + System.lineSeparator) *))
+
+  def stdinByteStream(stream: ZStream[Any, Exception, Byte]): ResticCommandBuilder = copy(stdin = stream)
+
+  def stdinStringStream(stream: ZStream[Any, Exception, String]): ResticCommandBuilder =
     copy(stdin = stream.via(ZPipeline.utf8Encode))
+
   def args(additionalArgs: String*): ResticCommandBuilder = copy(args = args ++ additionalArgs)
-  def options(opts : ResticOptionSource) : ResticCommandBuilder = copy(args = args ++ opts.toArgs)
-  def command(opts : String*): Command = {
+
+  def options(opts: ResticOptionSource): ResticCommandBuilder = copy(args = args ++ opts.toArgs)
+
+  def command(opts: String*): Command = {
     val stdin1 = stdin.mapError {
-      case e : IOException => CommandError.IOError(e)
-      case t : Throwable => CommandError.Error(t)
+      case e: IOException => CommandError.IOError(e)
+      case t: Throwable => CommandError.Error(t)
     }
     Command.Standard(
-      command = NonEmptyChunk.apply(config.resticExecutablePath.toString, (repo.toArgs ++ opts ++ args)*),
+      command = NonEmptyChunk.apply(config.resticExecutablePath.toString, repo.toArgs ++ opts ++ args *),
       env = Map(),
       workingDirectory = workingDirectory,
       stdin = ProcessInput.fromStream(stdin1),
@@ -56,48 +62,52 @@ final case class ResticCommandBuilder(
     )
   }
 
-final class ResticCommandBuilderService(config : ResticConfig):
-  def commandBuilder(repo : Repo) : ResticCommandBuilder = ResticCommandBuilder(config,repo)
+final class ResticCommandBuilderService(config: ResticConfig):
+  def commandBuilder(repo: Repo): ResticCommandBuilder = ResticCommandBuilder(config, repo)
 
 object ResticCommandBuilderService:
   val layer: ZLayer[Any, Config.Error, ResticCommandBuilderService] =
     ZLayer.fromZIO(ZIO.config(ResticConfig.config).map(ResticCommandBuilderService(_)))
 
 
-final class ResticCommandService(rb : ResticCommandBuilderService):
+final class ResticCommandService(rb: ResticCommandBuilderService):
 
-  def checkRepositoryExistence(repo : Repo, commonOptions : CommonOptions = CommonOptions(), password : Option[String] = None) : ZIO[Any,Exception,Boolean] =
-    for {
-      ec <- rb.commandBuilder(repo).options(commonOptions).command("cat","config").exitCode.map(_.asRestic)
-      _ <- ZIO.when(ec != REC_SUCCESS && ec != REC_INEXISTENT_REPO) {
-        ZIO.fail(ResticException("Error checking resitory existence with 'cat config'", Some(ec)))
-      }
-    } yield (ec == REC_SUCCESS)
+  def checkRepositoryExistence(repo: Repo, commonOptions: CommonOptions = CommonOptions(), password: Option[String] = None): ZIO[Any, Exception, Boolean] =
+    rb.commandBuilder(repo)
+      .options(commonOptions)
+      .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x + java.lang.System.lineSeparator())))
+      .command("cat", "config")
+      .exitCode
+      .map(_.asRestic)
+      .map(_ == REC_SUCCESS)
 
   def init(
-    repo : Repo,
-    commonOptions : CommonOptions = CommonOptions(),
-    initOptions : InitOptions = InitOptions(),
-    password : Option[String] = None
-  ) : ZIO[Any,Exception,InitResult] =
+    repo: Repo,
+    commonOptions: CommonOptions = CommonOptions(),
+    initOptions: InitOptions = InitOptions(),
+    password: Option[String] = None
+  ): ZIO[Any, Exception, InitResult] =
     for {
       process <- rb.commandBuilder(repo)
         .options(commonOptions.withJson)
-        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x)))
+        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x + java.lang.System.lineSeparator())))
         .options(initOptions)
         .command("init")
         .run
       stdoutFiber <- process.stdout.string.flatMap {
-          res => ZIO.fromEither(InitResult.jsonCodec.decodeJson(res))
+        res =>
+          ZIO.fromEither(InitResult.jsonCodec.decodeJson(res))
             .mapError(e => ResticException(s"Error decoding init result: $e"))
-        }.fork
+      }.fork
       ec <- process.exitCode.map(_.asRestic)
-      _ <- ZIO.unless(ec == REC_SUCCESS) { ZIO.fail(ResticException("Error initializing repository", Some(ec))) }
+      _ <- ZIO.unless(ec == REC_SUCCESS) {
+        ZIO.fail(ResticException("Error initializing repository", Some(ec)))
+      }
       res <- stdoutFiber.join
     } yield res
 
   def backupStream(
-    repo : Repo,
+    repo: Repo,
     commonOptions: CommonOptions = CommonOptions(),
     backupOptions: BackupOptions = BackupOptions(),
     password: Option[String] = None,
@@ -108,7 +118,7 @@ final class ResticCommandService(rb : ResticCommandBuilderService):
         .options(commonOptions.withJson)
         .options(backupOptions)
         .args(paths.map(_.toString) *)
-        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x)))
+        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x + java.lang.System.lineSeparator())))
         .command("backup")
         .redirectErrorStream(true)
         .run
@@ -125,7 +135,8 @@ final class ResticCommandService(rb : ResticCommandBuilderService):
     } yield outStream ++ streamTail
   end backupStream
 
-  def backupSummary( repo : Repo,
+  def backupSummary(
+    repo: Repo,
     commonOptions: CommonOptions = CommonOptions(),
     backupOptions: BackupOptions = BackupOptions(),
     password: Option[String] = None,
@@ -134,8 +145,8 @@ final class ResticCommandService(rb : ResticCommandBuilderService):
     for {
       stream <- backupStream(repo, commonOptions, backupOptions, password, paths)
       res <- stream.runFold[Option[BackupMessage.Summary]](None) {
-        case (_,m : BackupMessage.Summary) => Some(m)
-        case (x,_) => x
+        case (_, m: BackupMessage.Summary) => Some(m)
+        case (x, _) => x
       }.some.mapError(e => ResticException(s"Error getting backup summary: $e"))
     } yield res
 
@@ -150,7 +161,7 @@ final class ResticCommandService(rb : ResticCommandBuilderService):
       process <- rb.commandBuilder(repo)
         .options(commonOptions.withJson)
         .options(restoreOptions)
-        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x)))
+        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x + java.lang.System.lineSeparator())))
         .args(snapshotID)
         .command("restore")
         .redirectErrorStream(true)
@@ -173,7 +184,7 @@ final class ResticCommandService(rb : ResticCommandBuilderService):
     commonOptions: CommonOptions = CommonOptions(),
     restoreOptions: RestoreOptions = RestoreOptions(),
     password: Option[String] = None,
-    snapshotID : String
+    snapshotID: String
   ): IO[Exception, RestoreMessage.Summary] =
     for {
       stream <- restoreStream(repo, commonOptions, restoreOptions, password, snapshotID)
@@ -183,13 +194,15 @@ final class ResticCommandService(rb : ResticCommandBuilderService):
       }.some.mapError(e => ResticException(s"Error getting restore summary: $e"))
     } yield res
 
-  def snapshots(repo: Repo, commonOptions: CommonOptions = CommonOptions()
-        , snapshotsOptions : SnapshotsOptions, password: Option[String] = None): IO[Exception, Snapshots] =
+  def snapshots(
+    repo: Repo, commonOptions: CommonOptions = CommonOptions()
+    , snapshotsOptions: SnapshotsOptions, password: Option[String] = None
+  ): IO[Exception, Snapshots] =
     for {
       process <- rb.commandBuilder(repo)
         .options(commonOptions.withJson)
         .options(snapshotsOptions)
-        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x)))
+        .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x + java.lang.System.lineSeparator())))
         .command("snapshots")
         .redirectErrorStream(true)
         .run
@@ -198,7 +211,5 @@ final class ResticCommandService(rb : ResticCommandBuilderService):
       _ <- ZIO.fail(ResticException("Error getting snapshots", Some(ec))).when(ec != REC_SUCCESS)
       res <- ZIO.fromEither(Snapshots.jsonCodec.decodeJson(result)).mapError(msg => ResticException(s"Error decoding snapshots output: $msg"))
     } yield res
-
-
 
 
