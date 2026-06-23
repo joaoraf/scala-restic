@@ -197,7 +197,7 @@ private class BackupRestoreControllerImpl(
                 state.set(STARTING) *>
                 startController.catchAllCause(
                   insertError
-                ).fork
+                )
                 *> eventLoop
             case _ =>
               ZIO.logWarning(s"Unexpected command in NOT_STARTED state: $cmd")
@@ -205,10 +205,6 @@ private class BackupRestoreControllerImpl(
           }
         case STARTING =>
           cmd match {
-            case Start =>
-              ZIO.logInfo("Starting backup/restore controller")
-                *> startController.catchAllCause(insertError).fork
-                *> eventLoop
             case Initialize =>
               ZIO.logInfo("Initializing backup repository.") *>
                 state.set(INITIALIZING)
