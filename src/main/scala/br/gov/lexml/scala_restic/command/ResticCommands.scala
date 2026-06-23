@@ -111,12 +111,14 @@ final class ResticCommandService(rb: ResticCommandBuilderService):
     commonOptions: CommonOptions = CommonOptions(),
     backupOptions: BackupOptions = BackupOptions(),
     password: Option[String] = None,
+    basePath : Path,
     paths: NonEmptyChunk[Path]
   ): IO[Exception, ZStream[Any, Exception, BackupMessage]] =
     for {
       process <- rb.commandBuilder(repo)
         .options(commonOptions.withJson)
         .options(backupOptions)
+        .workingDirectory(basePath.toFile)
         .args(paths.map(_.toString) *)
         .stdinStringStream(password.fold(ZStream.empty)(x => ZStream(x + java.lang.System.lineSeparator())))
         .command("backup")
@@ -140,10 +142,11 @@ final class ResticCommandService(rb: ResticCommandBuilderService):
     commonOptions: CommonOptions = CommonOptions(),
     backupOptions: BackupOptions = BackupOptions(),
     password: Option[String] = None,
+    basePath : Path,
     paths: NonEmptyChunk[Path]
   ): IO[Exception, BackupMessage.Summary] =
     for {
-      stream <- backupStream(repo, commonOptions, backupOptions, password, paths)
+      stream <- backupStream(repo, commonOptions, backupOptions, password, basePath, paths)
       res <- stream.runFold[Option[BackupMessage.Summary]](None) {
         case (_, m: BackupMessage.Summary) => Some(m)
         case (x, _) => x

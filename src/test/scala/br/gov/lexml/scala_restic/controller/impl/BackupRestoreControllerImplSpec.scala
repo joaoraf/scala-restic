@@ -2,7 +2,8 @@ package br.gov.lexml.scala_restic.controller.impl
 
 import br.gov.lexml.scala_restic.command.{ResticCommandBuilderService, ResticCommandService}
 import br.gov.lexml.scala_restic.config.ResticConfig
-import br.gov.lexml.scala_restic.controller.impl.BackupRestoreControllerImpl.*
+import br.gov.lexml.scala_restic.controller.BackupRestoreController
+import br.gov.lexml.scala_restic.controller.BackupRestoreController.{BackupRequestResult, BackupRestoreHistory, State}
 import br.gov.lexml.scala_restic.options.backup.BackupOptions
 import br.gov.lexml.scala_restic.options.common.Repo
 import cron4s.*
@@ -20,20 +21,16 @@ import scala.jdk.CollectionConverters.*
 final class BackupRestoreControllerImplSpec extends ZIOSpecDefault:
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
-    suite("BackupRestoreControllerImpl2")(
+    suite("BackupRestoreControllerImpl")(
       test("initializes a missing repository and performs a manually requested backup") {
         withFixture(initIfNecessary = true) { fixture =>
           for
             sourceFile <- createSourceFile(fixture.sourcePath, "content to back up")
-            _ <- fixture.controller.start
-            _ <- awaitState(fixture.state)(_ == State.WAITING_COMMAND)
-            firstReply <- Promise.make[Nothing, BackupRequestResult]
-            secondReply <- Promise.make[Nothing, BackupRequestResult]
-            _ <- fixture.commands.offerAll(Chunk(Command.BackupNow(firstReply), Command.BackupNow(secondReply)))
-            firstResult <- awaitPromise(firstReply)
-            secondResult <- awaitPromise(secondReply)
-            completedHistory <- awaitHistory(fixture.history)(_.backupSummaries.nonEmpty)
-            _ <- awaitState(fixture.state)(_ == State.WAITING_COMMAND)
+            _ <- awaitState(fixture.controller)(_ == State.WAITING_COMMAND)
+            firstResult <- fixture.controller.backupNow
+            secondResult <- fixture.controller.backupNow
+            completedHistory <- awaitHistory(fixture.controller)(_.backupSummaries.nonEmpty)
+            _ <- awaitState(fixture.controller)(_ == State.WAITING_COMMAND)
             repositoryExists <- fixture.service.checkRepositoryExistence(
               Repo.atFolder(fixture.repoPath),
               password = Some(testPassword)
@@ -52,11 +49,10 @@ final class BackupRestoreControllerImplSpec extends ZIOSpecDefault:
         withFixture(initIfNecessary = true, backupCronSchedule = everySecondCron) { fixture =>
           for
             _ <- createSourceFile(fixture.sourcePath, "scheduled backup content")
-            _ <- fixture.controller.start
-            _ <- awaitState(fixture.state)(_ == State.WAITING_COMMAND)
+            _ <- awaitState(fixture.controller)(_ == State.WAITING_COMMAND)
             _ <- TestClock.adjust(1.second)
-            completedHistory <- awaitHistory(fixture.history)(_.backupSummaries.nonEmpty)
-            _ <- awaitState(fixture.state)(_ == State.WAITING_COMMAND)
+            completedHistory <- awaitHistory(fixture.controller)(_.backupSummaries.nonEmpty)
+            _ <- awaitState(fixture.controller)(_ == State.WAITING_COMMAND)
           yield assertTrue(
             completedHistory.backupSummaries.size == 1,
             completedHistory.backupSummaries.head.snapshot_id.nonEmpty
@@ -64,49 +60,37 @@ final class BackupRestoreControllerImplSpec extends ZIOSpecDefault:
         }
       },
       test("restores the latest snapshot when all configured backup folders are missing") {
-        withFixture(initIfNecessary = true, restoreIfEmpty = true) { fixture =>
+        withFixture(
+          initIfNecessary = true,
+          existingBackupContent = Some("content restored by the controller")
+        ) { fixture =>
           val expectedContent = "content restored by the controller"
           for
-            sourceFile <- createSourceFile(fixture.sourcePath, expectedContent)
-            _ <- fixture.service.init(Repo.atFolder(fixture.repoPath), password = Some(testPassword))
-            backup <- fixture.service.backupSummary(
-              Repo.atFolder(fixture.repoPath),
-              backupOptions = BackupOptions(tag = List("controller-restore-test")),
-              password = Some(testPassword),
-              paths = NonEmptyChunk(fixture.sourcePath)
-            )
-            _ <- ZIO.attempt(deleteRecursively(fixture.sourcePath))
-            _ <- fixture.controller.start
-            restoredHistory <- awaitHistory(fixture.history)(_.initialRestoreSummary.nonEmpty)
-            _ <- awaitState(fixture.state)(_ == State.WAITING_COMMAND)
-            restoredContent <- ZIO.attempt(Files.readString(sourceFile, StandardCharsets.UTF_8))
+            restoredHistory <- awaitHistory(fixture.controller)(_.initialRestoreSummary.nonEmpty)
+            _ <- awaitState(fixture.controller)(_ == State.WAITING_COMMAND)
+            restoredContent <- ZIO.attempt(Files.readString(fixture.sourcePath.resolve("data.txt"), StandardCharsets.UTF_8))
           yield assertTrue(
-            backup.snapshot_id.nonEmpty,
             restoredHistory.initialRestoreSummary.nonEmpty,
             restoredContent == expectedContent
           )
         }
       },
-      test("rejects backup requests while startup is still in progress") {
+      test("returns NotReady or Accepted when a backup is requested concurrently with startup") {
         withFixture(initIfNecessary = true) { fixture =>
           for
-            reply <- Promise.make[Nothing, BackupRequestResult]
-            _ <- fixture.controller.start
-            // Start was enqueued first, so this request is handled in STARTING before Initialize.
-            _ <- fixture.commands.offer(Command.BackupNow(reply))
-            result <- awaitPromise(reply)
-          yield assertTrue(result == BackupRequestResult.NotReady)
+            // The factory enqueues Start before returning the controller.
+            result <- fixture.controller.backupNow
+          yield assertTrue(
+            result == BackupRequestResult.NotReady || result == BackupRequestResult.Accepted
+          )
         }
       },
       test("currentState reports the latest controller state") {
         withFixture(initIfNecessary = true) { fixture =>
           for
-            beforeStart <- fixture.controller.currentState
-            _ <- fixture.controller.start
-            _ <- awaitState(fixture.state)(_ == State.WAITING_COMMAND)
+            _ <- awaitState(fixture.controller)(_ == State.WAITING_COMMAND)
             afterStart <- fixture.controller.currentState
           yield assertTrue(
-            beforeStart == State.NOT_STARTED,
             afterStart == State.WAITING_COMMAND
           )
         }
@@ -116,41 +100,33 @@ final class BackupRestoreControllerImplSpec extends ZIOSpecDefault:
           for
             initialHistory <- fixture.controller.currentHistory
             _ <- createSourceFile(fixture.sourcePath, "history test content")
-            _ <- fixture.controller.start
-            _ <- awaitState(fixture.state)(_ == State.WAITING_COMMAND)
-            reply <- Promise.make[Nothing, BackupRequestResult]
-            _ <- fixture.commands.offer(Command.BackupNow(reply))
-            result <- awaitPromise(reply)
-            expectedHistory <- awaitHistory(fixture.history)(_.backupSummaries.nonEmpty)
+            _ <- awaitState(fixture.controller)(_ == State.WAITING_COMMAND)
+            result <- fixture.controller.backupNow
+            expectedHistory <- awaitHistory(fixture.controller)(_.backupSummaries.nonEmpty)
             currentHistory <- fixture.controller.currentHistory
           yield assertTrue(
-            initialHistory == BackupRestoreHistory(),
+            initialHistory == BackupRestoreHistory(backupSummariesCapacity = historyCapacity),
             result == BackupRequestResult.Accepted,
             currentHistory == expectedHistory,
             currentHistory.backupSummaries.size == 1
           )
         }
       },
-      test("shutdown stops the controller and interrupts its command fiber") {
+      test("shutdown stops the controller") {
         withFixture(initIfNecessary = true) { fixture =>
           for
-            _ <- fixture.controller.start
-            _ <- awaitState(fixture.state)(_ == State.WAITING_COMMAND)
+            _ <- awaitState(fixture.controller)(_ == State.WAITING_COMMAND)
             _ <- Live.live(fixture.controller.shutdown)
-            currentState <- fixture.controller.currentState
-            commandFiber <- fixture.commandFiberPromise.await
-            commandFiberExit <- commandFiber.poll
+            currentState <- awaitState(fixture.controller)(_ == State.STOPPED())
           yield assertTrue(
-            currentState == State.STOPPED(),
-            commandFiberExit.nonEmpty
+            currentState == State.STOPPED()
           )
         }
       },
       test("stops with a failure when the repository is missing and initialization is disabled") {
         withFixture(initIfNecessary = false) { fixture =>
           for
-            _ <- fixture.controller.start
-            stopped <- awaitState(fixture.state) {
+            stopped <- awaitState(fixture.controller) {
               case State.STOPPED(_) => true
               case _ => false
             }
@@ -163,8 +139,7 @@ final class BackupRestoreControllerImplSpec extends ZIOSpecDefault:
       test("stops with a failure when an existing path is not a Restic repository") {
         withFixture(initIfNecessary = true, createRepositoryPath = true) { fixture =>
           for
-            _ <- fixture.controller.start
-            stopped <- awaitState(fixture.state) {
+            stopped <- awaitState(fixture.controller) {
               case State.STOPPED(_) => true
               case _ => false
             }
@@ -181,17 +156,14 @@ final class BackupRestoreControllerImplSpec extends ZIOSpecDefault:
     repoPath: Path,
     sourcePath: Path,
     service: ResticCommandService,
-    commands: Queue[Command],
-    state: SubscriptionRef[State],
-    history: SubscriptionRef[BackupRestoreHistory],
-    commandFiberPromise: Promise[Nothing, Fiber[Throwable, Unit]],
-    controller: BackupRestoreControllerImpl
+    controller: BackupRestoreController
   )
 
   private val resticExecutable: Path =
     Path.of(sys.env.getOrElse("RESTIC_TEST_EXECUTABLE", "/usr/bin/restic"))
 
   private val testPassword = "scala-restic-controller-test-password"
+  private val historyCapacity = 100
 
   private val testCron: CronExpr =
     Cron.parse("0 0 0 1 1 ?").fold(throw _, identity)
@@ -203,41 +175,49 @@ final class BackupRestoreControllerImplSpec extends ZIOSpecDefault:
     initIfNecessary: Boolean,
     restoreIfEmpty: Boolean = true,
     createRepositoryPath: Boolean = false,
-    backupCronSchedule: CronExpr = testCron
+    backupCronSchedule: CronExpr = testCron,
+    existingBackupContent: Option[String] = None
   )(test: Fixture => ZIO[R, E, TestResult]): ZIO[R & Scope, Throwable | E, TestResult] =
     for
       workDir <- tempDirectory("scala-restic-controller-")
       repoPath = workDir.resolve("repo")
       _ <- ZIO.when(createRepositoryPath)(ZIO.attempt(Files.createDirectories(repoPath)))
       sourcePath = workDir.resolve("source")
+      relativeSourcePath = workDir.relativize(sourcePath)
       service = ResticCommandService(ResticCommandBuilderService(ResticConfig(resticExecutable)))
-      commands <- Queue.unbounded[Command]
-      state <- SubscriptionRef.make[State](State.NOT_STARTED)
-      history <- SubscriptionRef.make(BackupRestoreHistory())
-      commandFiber <- Promise.make[Nothing, Fiber[Throwable, Unit]]
+      _ <- ZIO.foreachDiscard(existingBackupContent) { content =>
+        for
+          _ <- createSourceFile(sourcePath, content)
+          _ <- service.init(Repo.atFolder(repoPath), password = Some(testPassword))
+          _ <- service.backupSummary(
+            Repo.atFolder(repoPath),
+            backupOptions = BackupOptions(tag = List("controller-restore-test")),
+            password = Some(testPassword),
+            basePath = workDir,
+            paths = NonEmptyChunk(relativeSourcePath)
+          )
+          _ <- ZIO.attempt(deleteRecursively(sourcePath))
+        yield ()
+      }
       config = BackupRestoreControllerConfig(
         resticRepo = ResticRepoConfig(repoPath, testPassword, "localhost"),
         initIfNecessary = initIfNecessary,
         restoreIfEmpty = restoreIfEmpty,
         backupCronSchedule = backupCronSchedule,
-        backupFolders = NonEmptyChunk(sourcePath)
+        basePath = workDir,
+        backupFolders = NonEmptyChunk(relativeSourcePath),
+        historyCapacity = historyCapacity
       )
-      controller = BackupRestoreControllerImpl(
-        config,
-        commands,
-        state,
-        history,
-        commandFiber,
-        service
-      )
-      result <- test(Fixture(workDir, repoPath, sourcePath, service, commands, state, history, commandFiber, controller))
+      controller <- BackupRestoreControllerImpl.makeController(config, service)
+      result <- test(Fixture(workDir, repoPath, sourcePath, service, controller))
     yield result
 
   private def awaitState(
-    state: SubscriptionRef[State]
+    controller: BackupRestoreController
   )(predicate: State => Boolean): ZIO[Any, Throwable, State] =
     Live.live(
-      state.changes
+      ZStream.repeatZIO(controller.currentState)
+        .schedule(Schedule.spaced(10.millis))
         .filter(predicate)
         .runHead
         .someOrFail(new RuntimeException("State stream ended before reaching the expected state"))
@@ -245,18 +225,16 @@ final class BackupRestoreControllerImplSpec extends ZIOSpecDefault:
     )
 
   private def awaitHistory(
-    history: SubscriptionRef[BackupRestoreHistory]
+    controller: BackupRestoreController
   )(predicate: BackupRestoreHistory => Boolean): ZIO[Any, Throwable, BackupRestoreHistory] =
     Live.live(
-      history.changes
+      ZStream.repeatZIO(controller.currentHistory)
+        .schedule(Schedule.spaced(10.millis))
         .filter(predicate)
         .runHead
         .someOrFail(new RuntimeException("History stream ended before satisfying the predicate"))
         .timeoutFail(new RuntimeException("Timed out waiting for controller history"))(20.seconds)
     )
-
-  private def awaitPromise[A](promise: Promise[Nothing, A]): ZIO[Any, Throwable, A] =
-    Live.live(promise.await.timeoutFail(new RuntimeException("Timed out waiting for command reply"))(20.seconds))
 
   private def createSourceFile(sourcePath: Path, content: String): Task[Path] =
     ZIO.attempt {

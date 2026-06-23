@@ -60,13 +60,21 @@ final case class BackupRestoreControllerConfig(
   initIfNecessary : Boolean = true,
   restoreIfEmpty : Boolean = true,
   backupCronSchedule : CronExpr,
+  basePath : Path,
   backupFolders : NonEmptyChunk[Path],
   restoreOptions : BRC_RestoreOptions = BRC_RestoreOptions(),
-  backupOptions : BRC_BackupOptions = BRC_BackupOptions()
-)
+  backupOptions : BRC_BackupOptions = BRC_BackupOptions(),
+  historyCapacity : Int = 100
+):
+  require(historyCapacity > 0)
 
 object BackupRestoreControllerConfig:
   import br.gov.lexml.scala_restic.misc.ZioConfigInstances.given
-  val configs: Config[List[BackupRestoreControllerConfig]] =
-    deriveConfig[List[BackupRestoreControllerConfig]].nested("restic","controllers","backup-restore")
+  val config: Config[BackupRestoreControllerConfig] =
+    deriveConfig[BackupRestoreControllerConfig]
+      .validate("Invalid history capacity size")(_.historyCapacity > 0)
+
+  val configs: Config[List[BackupRestoreControllerConfig]] = {
+    Config.listOf(config).nested("restic","controllers","backup-restore")
+  }
 

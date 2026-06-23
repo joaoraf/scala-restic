@@ -56,19 +56,21 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
               numberOfFiles = 10,
               totalSizeBytes = 4096
             )
+            relativeSource = fixture.workDir.relativize(source.root)
             restoreTarget <- ZIO.attempt(Files.createDirectories(fixture.workDir.resolve("restore-target")))
             _ <- fixture.service.init(fixture.repo, fixture.commonOptions)
             backupSummary <- fixture.service.backupSummary(
               fixture.repo,
               fixture.commonOptions,
               BackupOptions(tag = List("zio-test")),
-              paths = NonEmptyChunk(source.root)
+              basePath = fixture.workDir,
+              paths = NonEmptyChunk(relativeSource)
             )
             restoreSummary <- fixture.service.restoreSummary(
               fixture.repo,
               fixture.commonOptions,
               RestoreOptions(target = Some(restoreTarget)),
-              snapshotID = s"${backupSummary.snapshot_id}:${source.root}"
+              snapshotID = s"${backupSummary.snapshot_id}:$relativeSource"
             )
             restoredContents <- readRelativeFiles(restoreTarget)
           } yield assert(backupSummary.snapshot_id)(isNonEmptyString) &&
@@ -87,12 +89,14 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
               numberOfFiles = 600,
               totalSizeBytes = 2048L * 1024L
             )
+            relativeSource = fixture.workDir.relativize(source.root)
             restoreTarget <- ZIO.attempt(Files.createDirectories(fixture.workDir.resolve("stream-restore-target")))
             _ <- fixture.service.init(fixture.repo, fixture.commonOptions)
             backupStream <- fixture.service.backupStream(
               fixture.repo,
               fixture.commonOptions.copy(verbose = 2),
-              paths = NonEmptyChunk(source.root)
+              basePath = fixture.workDir,
+              paths = NonEmptyChunk(relativeSource)
             )
             backupMessages <- backupStream.tap(logResticMessage("backup")).runCollect
             snapshotId <- ZIO.fromOption(backupMessages.collectFirst { case summary: BackupMessage.Summary => summary.snapshot_id })
@@ -101,7 +105,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
               fixture.repo,
               fixture.commonOptions,
               RestoreOptions(target = Some(restoreTarget)),
-              snapshotID = s"$snapshotId:${source.root}"
+              snapshotID = s"$snapshotId:$relativeSource"
             )
             restoreMessages <- restoreStream.tap(logResticMessage("restore")).runCollect
           } yield assertTrue(backupMessages.exists(_.isInstanceOf[BackupMessage.Summary])) &&
@@ -118,12 +122,14 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
               numberOfFiles = 4,
               totalSizeBytes = 1024L
             )
+            relativeSource = fixture.workDir.relativize(source.root)
             _ <- fixture.service.init(fixture.repo, fixture.commonOptions)
             firstBackup <- fixture.service.backupSummary(
               fixture.repo,
               fixture.commonOptions,
               BackupOptions(tag = List("snapshots-test")),
-              paths = NonEmptyChunk(source.root)
+              basePath = fixture.workDir,
+              paths = NonEmptyChunk(relativeSource)
             )
             expandedSource <- createRandomSourceTree(
               source.root,
@@ -136,12 +142,13 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
               fixture.repo,
               fixture.commonOptions,
               BackupOptions(tag = List("snapshots-test")),
-              paths = NonEmptyChunk(source.root)
+              basePath = fixture.workDir,
+              paths = NonEmptyChunk(relativeSource)
             )
             snapshots <- fixture.service.snapshots(
               fixture.repo,
               fixture.commonOptions,
-              SnapshotsOptions(path = Vector(source.root.toString), tags = Vector("snapshots-test"))
+              SnapshotsOptions(tags = Vector("snapshots-test"))
             )
             snapshotIds = snapshots.snapshots.map(_.id).toSet
             snapshotsById = snapshots.snapshots.map(snapshot => snapshot.id -> snapshot).toMap
@@ -161,7 +168,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
               } yield result
             }
           }
-        }*
+        } *
       )
     )
 
@@ -248,6 +255,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
         numberOfFiles = 5,
         totalSizeBytes = 2048L
       )
+      relativeSource = fixture.workDir.relativize(source.root)
       restoreTarget <- ZIO.attempt(Files.createDirectories(fixture.workDir.resolve("password-restore-target")))
       _ <- fixture.service.init(fixture.repo, credentials.commonOptions, password = credentials.password)
       backupSummary <- fixture.service.backupSummary(
@@ -255,12 +263,13 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
         credentials.commonOptions,
         BackupOptions(tag = List("password-form-test")),
         password = credentials.password,
-        paths = NonEmptyChunk(source.root)
+        basePath = fixture.workDir,
+        paths = NonEmptyChunk(relativeSource)
       )
       snapshots <- fixture.service.snapshots(
         fixture.repo,
         credentials.commonOptions,
-        SnapshotsOptions(path = Vector(source.root.toString), tags = Vector("password-form-test")),
+        SnapshotsOptions(tags = Vector("password-form-test")),
         password = credentials.password
       )
       restoreSummary <- fixture.service.restoreSummary(
@@ -268,7 +277,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
         credentials.commonOptions,
         RestoreOptions(target = Some(restoreTarget)),
         password = credentials.password,
-        snapshotID = s"${backupSummary.snapshot_id}:${source.root}"
+        snapshotID = s"${backupSummary.snapshot_id}:$relativeSource"
       )
       restoredContents <- readRelativeFiles(restoreTarget)
       snapshotIds = snapshots.snapshots.map(_.id).toSet
