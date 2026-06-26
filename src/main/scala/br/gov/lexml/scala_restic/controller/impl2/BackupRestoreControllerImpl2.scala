@@ -4,12 +4,13 @@ import zio.*
 import zio.stream.*
 import zio.config.*
 import zio.config.magnolia.*
-import BackupRestoreControllerImpl2.{Message, State}
+import BackupRestoreControllerImpl2.{Message, ResticRestoreException, State}
 import br.gov.lexml.scala_restic.command.ResticCommandService
 import br.gov.lexml.scala_restic.controller.BackupRestoreController.State.WAITING_COMMAND
 import br.gov.lexml.scala_restic.controller.impl.BackupRestoreControllerConfig
 import br.gov.lexml.scala_restic.data.restore.RestoreMessage
 import br.gov.lexml.scala_restic.options.common.Repo
+import br.gov.lexml.scala_restic.options.restore.RestoreOptions
 import br.gov.lexml.scala_restic.options.snapshots.SnapshotsOptions
 import cron4s.*
 import cron4s.lib.javatime.*
@@ -25,14 +26,42 @@ enum BackupRestoreControllerImplMessage:
 class BackupRestoreControllerImpl2 private (
   private val config: BackupRestoreControllerConfig,,
   private val queue : Queue[BackupRestoreControllerImpl2.Message],
-  private val eventLoopFiberPromise : Promise[Nothing,Fiber[Nothing,Unit]],
+  private val eventLoopFiberPromise : Promise[Nothing,Fiber[Throwable,Unit]],
   private val stateRef : SubscriptionRef[State],
   private val backupScheduleFiberRef : Ref[Option[Fiber[Nothing,Unit]]],
+  private val childFiberFailureCause : Ref[Cause[Throwable]],
   private val resticCommandService : ResticCommandService
 ):
+  import State.*
+  import Message.*
 
   private val repo = Repo.atFolder(config.resticRepo.repoPath)
   private val password = Option(config.resticRepo.repoPassword).filterNot(_.isBlank)
+
+  extension [Env,E <: Throwable,A] (effect : ZIO[Env,E,A])
+    def forkCatchAndSignalError: URIO[Env, Fiber.Runtime[E, A]] =
+      effect.catchAllCause { cause =>
+        childFiberFailureCause.update(c => c ++ cause)
+        eventLoopFiberPromise.poll.flatMap {
+          case Some(f) => f.flatMap(_.interrupt)
+          case None => ZIO.logWarning(s"Error caught in child fiber, but the eventLoopFiberPromise is undefined: $cause !")
+        }
+        ZIO.refailCause(cause)
+      }.fork
+
+  private def monitorEventLoop = for {
+    eventLoopFiber <- eventLoop.fork
+    _ <- childFiberFailureCause.set(Cause.empty)
+    _ <- eventLoopFiber.await.flatMap {
+      case Exit.Success =>
+        stateRef.set(State.Stopped(Cause.empty))
+      case Exit.Failure(cause) =>
+        val cause1 = if cause.isInterruptedOnly then Cause.empty else cause
+        childFiberFailureCause.getAndSet(Cause.empty).flatMap {
+          c => stateRef.set(State.Stopped(cause1 ++ c))
+        }
+    }
+  } yield eventLoopFiber
 
   private def start = for {
     eventLoopFiber <- eventLoop.forkScoped
@@ -40,22 +69,17 @@ class BackupRestoreControllerImpl2 private (
     _ <- queue.offer(Message.Start)
   } yield ()
 
-  import State.*
-  import Message.*
+  private final case class ProcessStep(task : Task[Option[(State,Option[ProcessStep])]])
 
-  final case class ProcessStep(task : Task[Option[(State,Option[ProcessStep])]])
-
-  private def eventLoop : UIO[Unit] = {
-    def executeProcess(process : ProcessStep) : UIO[Unit] =
-      process.task.foldCauseZIO(
-        cause => stateRef.set(Stopped(cause)),
-        {
-          case None => stateRef.set(Stopped())
+  private def eventLoop : Task[Unit] = {
+    def executeProcess(process : ProcessStep) : Task[Unit] =
+      process.task.flatMap {
+          case None => ZIO.unit
           case Some((nextState2,optProcess)) =>
             stateRef.set(nextState2) *>
             optProcess.fold(loop)(executeProcess)
-        })
-    def loop : UIO[Unit] = for {
+        }
+    def loop : Task[Unit] = for {
       currentState <- stateRef.get
       nextMessage <- queue.take
       process = processStateMessage(currentState,nextMessage)
@@ -71,20 +95,20 @@ class BackupRestoreControllerImpl2 private (
 
   private type StepTask = Task[Option[(State,Option[ProcessStep])]]
 
-  private def step(state : State, task : StepTask) =
+  private inline def step(state : State, task : StepTask) =
     ZIO.succeed(Some((state,Some(ProcessStep(task)))))
 
-  private def step(state: State) =
+  private inline def step(state: State) =
     ZIO.succeed(Some((state, None)))
     
-  private def stepOut = ZIO.succeed(None)  
+  private inline def stepOut = ZIO.succeed(None)
 
-  private val toScheduleStep : StepTask = step(Starting,scheduleTask)
+  private inline val toScheduleStep : StepTask = step(Starting,scheduleTask)
 
-  private val toRestoreStep : StepTask =
-    ZIO.clockWith(_.currentDateTime).flatMap { now => step(Restoring(now),restoreTask) }
+  private inline def toRestoreStep(snapshotID : String) : StepTask =
+    ZIO.clockWith(_.currentDateTime).flatMap { now => step(Restoring(now),restoreTask(snapshotID)) }
 
-  private def fail(message : String) =  ZIO.fail(Exception(message))
+  private inline def fail(message : String) =  ZIO.fail(Exception(message))
 
   private def startProcess : StepTask =
     // Check if the restic repo path exists.
@@ -115,7 +139,7 @@ class BackupRestoreControllerImpl2 private (
           ZIO.attempt(Files.exists(config.basePath.resolve(folder).normalize))
         )
         result <- snapshots.snapshots.headOption match {
-          case Some(snapshot) if config.restoreIfEmpty && !anyBackupFolderExists => toRestoreStep
+          case Some(snapshot) if config.restoreIfEmpty && !anyBackupFolderExists => toRestoreStep(snapshot.id)
           case _ => toScheduleStep
         }
       } yield result
@@ -141,15 +165,42 @@ class BackupRestoreControllerImpl2 private (
         case None => ZIO.unit
     }.map(_ => Some((Ready,None)))
 
-  private def restoreTask : StepTask = ???
-
-  
-
+  private def restoreTask(snapshotID : String) : StepTask =
+    val restoreOptions = RestoreOptions(
+      exclude = config.restoreOptions.excludes,
+      iexclude = config.restoreOptions.iexcludes,
+      include = config.restoreOptions.includes,
+      iinclude = config.restoreOptions.iincludes,
+      tag = config.restoreOptions.tags,
+      delete = config.restoreOptions.deleteExcluded,
+      host = config.restoreOptions.hosts,
+      target = Some(config.basePath)
+    )
+    for {
+      now <- ZIO.clockWith(_.currentDateTime)
+      stream <- resticCommandService.restoreStream(
+        repo,
+        restoreOptions = restoreOptions,
+        password = password,
+        snapshotID = snapshotID
+      )
+      _ <- stream.foreach {
+        case status: RestoreMessage.Status => queue.offer(Message.PartialRestoreStatus(status))
+        case summary: RestoreMessage.Summary => queue.offer(Message.RestoreCompleted(summary))
+        case error: RestoreMessage.Error => ZIO.fail(ResticRestoreException(error))
+        case _: RestoreMessage.VerboseStatus => ZIO.unit
+      }.forkCatchAndSignalError
+    } yield Some((Restoring(now),None))
+  end restoreTask
 
 object BackupRestoreControllerImpl2:
+  final case class ResticRestoreException(error : RestoreMessage.Error)
+    extends Exception(s"Error during restic restore: ${error.message} on ${error.item} during ${error.during}")
   private enum Message:
     case Start
     case ScheduledBackup
+    case PartialRestoreStatus(status : RestoreMessage.Status)
+    case RestoreCompleted(summary : RestoreMessage.Summary)
 
   enum State:
     case Stopped(cause: Cause[Any] = Cause.empty) extends State
