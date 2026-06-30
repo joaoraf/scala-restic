@@ -16,9 +16,11 @@ import br.gov.lexml.scala_restic.options.backup.BackupOptions
 import br.gov.lexml.scala_restic.options.common.{CommonOptions, Repo}
 import br.gov.lexml.scala_restic.options.restore.RestoreOptions
 import br.gov.lexml.scala_restic.options.snapshots.SnapshotsOptions
+import zio.config.derivation.kebabCase
 
 import java.nio.file.Path
 
+@kebabCase
 final case class ResticRepoControllerImplConfig(
   name : String = "",
   repoPath : Path,
@@ -68,7 +70,7 @@ object ResticRepoControllerImplConfigs:
   val config: Config[ResticRepoControllerImplConfigs] = {
     Config.table("controllers", ResticRepoControllerImplConfig.config).map { m =>
       ResticRepoControllerImplConfigs(m.map { (name, config) => (name, config.copy(name = name)) })
-    }
+    }.nested("restic")
   }
 
 class ResticRepoControllerImpl(
