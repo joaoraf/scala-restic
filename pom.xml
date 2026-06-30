@@ -2,7 +2,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>br.gov.lexml</groupId>
   <artifactId>scala-restic</artifactId>
-  <version>1.0.3-SNAPSHOT</version>
+  <version>1.0.3</version>
   <name>Scala Restic API</name>
   <description>A Scala API for the Restic backup tool</description>
   <url>https://github.com/lexmlbr/scala-restic</url>
