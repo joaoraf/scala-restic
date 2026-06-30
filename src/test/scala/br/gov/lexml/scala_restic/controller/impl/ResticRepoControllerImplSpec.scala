@@ -20,6 +20,12 @@ import scala.jdk.CollectionConverters.*
 @RunWith(classOf[ZTestJUnitRunner])
 final class ResticRepoControllerImplSpec extends ZIOSpecDefault:
 
+  override val bootstrap: ZLayer[Any, Any, TestEnvironment] =
+    ZLayer.make[TestEnvironment](
+      testEnvironment,
+      Runtime.removeDefaultLoggers
+    )
+
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("ResticRepoControllerImpl")(
       test("initializes, backs up, lists snapshots, and restores a temporary repository") {

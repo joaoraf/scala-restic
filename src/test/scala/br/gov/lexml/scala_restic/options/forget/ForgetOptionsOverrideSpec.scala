@@ -2,11 +2,18 @@ package br.gov.lexml.scala_restic.options.forget
 
 import br.gov.lexml.scala_restic.options.restore.GroupingOptions
 import org.junit.runner.RunWith
+import zio.*
 import zio.test.*
 import zio.test.junit.ZTestJUnitRunner
 
 @RunWith(classOf[ZTestJUnitRunner])
 final class ForgetOptionsOverrideSpec extends ZIOSpecDefault:
+
+  override val bootstrap: ZLayer[Any, Any, TestEnvironment] =
+    ZLayer.make[TestEnvironment](
+      testEnvironment,
+      Runtime.removeDefaultLoggers
+    )
 
   override def spec =
     suite("ForgetOptionsOverride")(

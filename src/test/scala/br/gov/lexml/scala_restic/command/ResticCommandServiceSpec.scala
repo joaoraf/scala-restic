@@ -11,7 +11,6 @@ import br.gov.lexml.scala_restic.options.restore.RestoreOptions
 import br.gov.lexml.scala_restic.options.snapshots.SnapshotsOptions
 import org.junit.runner.RunWith
 import zio.*
-import zio.logging.LogFilter.LogLevelByNameConfig
 import zio.test.*
 import zio.test.Assertion.*
 import zio.test.junit.ZTestJUnitRunner
@@ -19,7 +18,6 @@ import zio.test.junit.ZTestJUnitRunner
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
-import zio.logging.{ConsoleLoggerConfig, LogFilter, LogFormat, consoleLogger}
 
 @RunWith(classOf[ZTestJUnitRunner])
 final class ResticCommandServiceSpec extends ZIOSpecDefault:
@@ -27,11 +25,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
   override val bootstrap: ZLayer[Any, Any, TestEnvironment] =
     ZLayer.make[TestEnvironment](
       testEnvironment,
-      Runtime.removeDefaultLoggers,
-      consoleLogger(ConsoleLoggerConfig(
-        LogFormat.default,
-        LogLevelByNameConfig(LogLevel.Debug)
-      ))
+      Runtime.removeDefaultLoggers
     )
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
@@ -100,7 +94,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
               basePath = fixture.workDir,
               paths = NonEmptyChunk(relativeSource)
             )
-            backupMessages <- backupStream.tap(logResticMessage("backup")).runCollect
+            backupMessages <- backupStream.runCollect
             snapshotId <- ZIO.fromOption(backupMessages.collectFirst { case summary: BackupMessage.Summary => summary.snapshot_id })
               .mapError(_ => ResticException("Backup stream did not contain a summary"))
             restoreStream <- fixture.service.restoreStream(
@@ -109,7 +103,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
               RestoreOptions(target = Some(restoreTarget)),
               snapshotID = s"$snapshotId:$relativeSource"
             )
-            restoreMessages <- restoreStream.tap(logResticMessage("restore")).runCollect
+            restoreMessages <- restoreStream.runCollect
           } yield assertTrue(backupMessages.exists(_.isInstanceOf[BackupMessage.Summary])) &&
             assertTrue(restoreMessages.exists(_.isInstanceOf[RestoreMessage.Summary]))
         }
@@ -423,8 +417,6 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
       finally stream.close()
     }
 
-  private def logResticMessage(command: String)(message: BackupMessage | RestoreMessage): UIO[Unit] =
-    ZIO.logDebug(s"Decoded restic $command message: $message")
 
   private def deleteRecursively(path: Path): Unit =
     if Files.exists(path) then
