@@ -2,11 +2,40 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>br.gov.lexml</groupId>
   <artifactId>scala-restic</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>1.0.0</version>
   <name>Scala Restic API</name>
+  <description>A Scala API for the Restic backup tool</description>
+  <url>https://github.com/lexmlbr/scala-restic</url>
+  <licenses>
+    <license>
+      <name>GPLv2</name>
+      <url>https://www.gnu.org/licenses/old-licenses/gpl-2.0.html</url>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>jrafael</id>
+      <name>João Nicola</name>
+      <email>jrafael@senado.leg.br</email>
+    </developer>
+  </developers>
+
+  <distributionManagement>
+    <snapshotRepository>
+      <id>central</id>
+      <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
+    </snapshotRepository>
+    <repository>
+      <id>central</id>
+      <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+    </repository>
+  </distributionManagement>
+
+
   <properties>
     <scala.compat.version>3</scala.compat.version>
-    <scala.version>3.8.3</scala.version>
+    <scala.version>3.8.4</scala.version>
     <zio.version>2.1.26</zio.version>
     <zio.kafka.version>3.0.0</zio.kafka.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -14,7 +43,18 @@
     <zio-config.version>4.0.7</zio-config.version>
     <zio-logging.version>2.5.3</zio-logging.version>
     <zio-process.version>0.8.0</zio-process.version>
+    <zio-schema.version>1.8.5</zio-schema.version>
+    <cron4s-parser.version>0.8.2</cron4s-parser.version>
   </properties>
+
+  <scm>
+    <url>https://github.com/joaoraf/scala-restic</url>
+    <developerConnection>scm:git:https://github.com/joaoraf/scala-restic.git</developerConnection>
+    <connection>scm:git:https://github.com/joaoraf/scala-restic.git</connection>
+    <tag>HEAD</tag>
+  </scm>
+
+
   <build>
     <plugins>
       <plugin>
@@ -54,7 +94,6 @@
             <goals>
               <goal>testCompile</goal>
             </goals>
-            <configuration></configuration>
           </execution>
         </executions>
       </plugin>
@@ -67,6 +106,16 @@
             <productionBranch>main</productionBranch>
             <developmentBranch>develop</developmentBranch>
           </gitFlowConfig>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.4</version>
+        <configuration>
+          <includes>
+            <include>**/*Spec.class</include>
+          </includes>
         </configuration>
       </plugin>
     </plugins>
@@ -93,6 +142,18 @@
       <groupId>dev.zio</groupId>
       <artifactId>zio-streams_${scala.compat.version}</artifactId>
       <version>${zio.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>dev.zio</groupId>
+      <artifactId>zio-test_${scala.compat.version}</artifactId>
+      <version>${zio.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>dev.zio</groupId>
+      <artifactId>zio-test-junit_${scala.compat.version}</artifactId>
+      <version>${zio.version}</version>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.scala-lang</groupId>
@@ -139,10 +200,109 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>dev.zio</groupId>
+      <artifactId>zio-schema_${scala.compat.version}</artifactId>
+      <version>${zio-schema.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>dev.zio</groupId>
+      <artifactId>zio-schema-json_${scala.compat.version}</artifactId>
+      <version>${zio-schema.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>dev.zio</groupId>
+      <artifactId>zio-schema-derivation_${scala.compat.version}</artifactId>
+      <version>${zio-schema.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.apache.logging.log4j</groupId>
       <artifactId>log4j-slf4j-impl</artifactId>
-      <version>2.19.0</version>
+      <version>2.26.0</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>com.github.alonsodomin.cron4s</groupId>
+      <artifactId>cron4s-core_${scala.compat.version}</artifactId>
+      <version>${cron4s-parser.version}</version>
+    </dependency>
+
   </dependencies>
+
+  <profiles>
+    <profile>
+      <id>release</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <build>
+        <plugins>
+
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.11.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>true</autoPublish>
+              <waitUntil>published</waitUntil>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.4.0</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <version>3.5.0</version>
+            <executions>
+              <execution>
+                <id>empty-javadoc-jar</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+                <configuration>
+                  <classifier>javadoc</classifier>
+                  <classesDirectory>${basedir}/javadoc</classesDirectory>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.8</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+                <configuration>
+                  <!-- Prevent gpg from using pinentry programs. Fixes: gpg: signing
+                      failed: Inappropriate ioctl for device -->
+                  <gpgArguments>
+                    <arg>--pinentry-mode</arg>
+                    <arg>loopback</arg>
+                  </gpgArguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
