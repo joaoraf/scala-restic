@@ -1,6 +1,7 @@
 package br.gov.lexml.scala_restic.command
 
 import br.gov.lexml.scala_restic.config.ResticConfig
+import br.gov.lexml.scala_restic.command.impl.ResticCommandServiceImpl
 import br.gov.lexml.scala_restic.data.backup.BackupMessage
 import br.gov.lexml.scala_restic.data.restore.RestoreMessage
 import br.gov.lexml.scala_restic.options.backup.BackupOptions
@@ -42,7 +43,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
             existsAfter <- fixture.service.checkRepositoryExistence(fixture.repo, fixture.commonOptions)
           } yield assertTrue(!existsBefore) &&
             assertTrue(initResult.id.nonEmpty) &&
-            assertTrue(initResult.repository.toString.nonEmpty) &&
+            assertTrue(initResult.repository.nonEmpty) &&
             assertTrue(existsAfter)
         }
       },
@@ -219,7 +220,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
         "stdin password parameter",
         _ => ZIO.succeed(PasswordCredentials(
           CommonOptions(noCache = true),
-          Some(testPassword + java.lang.System.lineSeparator())
+          Some(testPassword)
         ))
       )
     )
@@ -231,7 +232,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
         repoPath = workDir.resolve("repo")
         _ <- ZIO.attempt(Files.createDirectories(repoPath))
         config = ResticConfig(resticExecutable)
-        service = ResticCommandService(ResticCommandBuilderService(config))
+        service = ResticCommandServiceImpl(ResticCommandBuilderService(config))
         commonOptions = CommonOptions(insecureNoPassword = true, noCache = true)
         result <- test(ResticFixture(workDir, Repo.atFolder(repoPath), commonOptions, service))
       } yield result

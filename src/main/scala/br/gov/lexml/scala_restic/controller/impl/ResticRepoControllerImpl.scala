@@ -6,7 +6,7 @@ import zio.stream.*
 import zio.config.*
 import zio.config.magnolia.*
 import br.gov.lexml.scala_restic.misc.ZioConfigInstances.given
-import br.gov.lexml.scala_restic.controller.{GeneralRepoControllerException, RepoBackupData, RepoBackupException, RepoBackupItemException, RepoControllerException, RepoRestoreData, RepoRestoreException, RepoRestoreItemException, ResticRepoController}
+import br.gov.lexml.scala_restic.controller.{GeneralRepoControllerException, ProcessData, RepoBackupData, RepoBackupException, RepoBackupItemException, RepoControllerException, RepoRestoreData, RepoRestoreException, RepoRestoreItemException, ResticRepoController}
 import br.gov.lexml.scala_restic.data.backup.BackupMessage
 import br.gov.lexml.scala_restic.data.init.InitResult
 import br.gov.lexml.scala_restic.data.restore
@@ -79,7 +79,7 @@ object ResticRepoControllerImplConfigs:
 class ResticRepoControllerImpl(
   config : ResticRepoControllerImplConfig,
   resticCommandService : ResticCommandService) extends ResticRepoController:
-  private val repo : Repo = Repo.R_FILE(config.repoPath)
+  private val repo : Repo = Repo.R_LOCATION(config.repoPath.toString)
   override def repoExists(
     commonOptions: CommonOptions = CommonOptions()
   ): Task[Boolean] =
@@ -102,17 +102,30 @@ class ResticRepoControllerImpl(
       password = config.passwordOption
     ).map(_.snapshots)
 
-  private final case class RestoreProcess(
-    restoreFiber : Fiber[RepoControllerException,RestoreMessage.Summary],
-    statusQueue : Queue[RestoreMessage.Status],
-  ) extends RepoRestoreData:
-    override def statusStream: ZStream[Any,Nothing,RestoreMessage.Status] = ZStream.fromQueue(statusQueue)
-    override def awaitSummary: ZIO[Any,RepoControllerException,RestoreMessage.Summary] =
-      restoreFiber.join
-    override def cancel: UIO[Unit] =
-      restoreFiber.interrupt.ignore *> statusQueue.shutdown *> ZIO.succeed(true)
+  private final case class ProcessDataImpl[Summary,Status](
+    fiber : Fiber[RepoControllerException,Summary],
+    statusHub : Hub[Take[Nothing, Status]],
+    completed : Promise[Nothing, Unit],
+  ) extends ProcessData[Summary,Status]:
+    override def statusStream: ZStream[Any, Nothing, Status] =
+      ZStream.unwrapScoped {
+        completed.isDone.flatMap {
+          case true => ZIO.succeed(ZStream.empty)
+          case false =>
+            statusHub.subscribe.flatMap { subscription =>
+              completed.isDone.map {
+                case true => ZStream.empty
+                case false => ZStream.fromQueue(subscription).flattenTake
+              }
+            }
+        }
+      }
 
-  end RestoreProcess
+    override def awaitSummary: ZIO[Any, RepoControllerException, Summary] =
+      fiber.join
+
+    override def cancel: UIO[Unit] =
+      fiber.interrupt.unit
 
   override def restore(snapshotID: String = "latest", commonOptions: CommonOptions, restoreOptions: RestoreOptions): ZIO[Scope, RepoControllerException, RepoRestoreData] =
     for {
@@ -123,45 +136,36 @@ class ResticRepoControllerImpl(
         password = config.passwordOption,
         snapshotID = snapshotID
       ).mapError { err => RepoRestoreException(s"Error during restic restore execution: ${err.getMessage}",Cause.fail(err)) }
-      statusQueue <- Queue.sliding[RestoreMessage.Status](100)
+      statusHub <- ZIO.acquireRelease(Hub.sliding[Take[Nothing, RestoreMessage.Status]](100))(_.shutdown)
+      completed <- Promise.make[Nothing, Unit]
       restoreFiber <- (
         for {
           (optSummary,error) <-
             restoreStream
               .mapError { err => RepoRestoreException(s"Error during restic restore execution: ${err.getMessage}", Cause.fail(err)) }
-              .runFoldZIO[Any,RepoControllerException,(Option[RestoreMessage.Summary],Cause[RepoRestoreItemException])]((None,Cause.empty)) {
-            case ((optSummary,errors),msg) => msg match {
-              case msg: RestoreMessage.Status => statusQueue.offer(msg) *> ZIO.succeed((optSummary,errors))
-              case msg: RestoreMessage.Summary => ZIO.succeed((Some(msg),errors))
-              case msg: RestoreMessage.Error =>
-                ZIO.succeed((optSummary,
-                  errors ++ Cause.fail(RepoRestoreItemException(msg))))
-              case _ => ZIO.succeed((optSummary,errors))
-            }
-          }.catchAllCause { cause => ZIO.succeed((None,cause)) }.ensuring(statusQueue.shutdown)
+              .either
+              .runFoldZIO[Any,Nothing,(Option[RestoreMessage.Summary],Cause[RepoControllerException])]((None,Cause.empty)) {
+                case ((optSummary,errors),Right(msg)) => msg match {
+                  case msg: RestoreMessage.Status =>
+                    statusHub.publish(Take.single(msg)).as((optSummary,errors))
+                  case msg: RestoreMessage.Summary => ZIO.succeed((Some(msg),errors))
+                  case msg: RestoreMessage.Error =>
+                    ZIO.succeed((optSummary,
+                      errors ++ Cause.fail(RepoRestoreItemException(msg))))
+                  case _ => ZIO.succeed((optSummary,errors))
+                }
+                case ((optSummary,errors),Left(streamError)) =>
+                  ZIO.succeed((optSummary,errors ++ Cause.fail(streamError)))
+              }
           _ <- ZIO.when(error.nonEmpty) {
             ZIO.failCause(error)
           }
           summary <- ZIO.fromOption(optSummary).mapError(_ => GeneralRepoControllerException(s"Summary not found during restore!"))
         } yield summary
-      ).forkScoped
-      restoreProcess = RestoreProcess(restoreFiber, statusQueue)
+      ).ensuring(completed.succeed(()) *> statusHub.publish(Take.end).unit).forkScoped
+      restoreProcess = ProcessDataImpl(restoreFiber, statusHub, completed)
       _ <- ZIO.addFinalizer(restoreProcess.cancel)
     } yield restoreProcess
-
-  private final case class BackupProcess(
-    backupFiber: Fiber[RepoControllerException, BackupMessage.Summary],
-    statusQueue: Queue[BackupMessage.Status],
-  ) extends RepoBackupData:
-    override def statusStream: ZStream[Any,Nothing,BackupMessage.Status] = ZStream.fromQueue(statusQueue)
-
-    override def awaitSummary: ZIO[Any, RepoControllerException, BackupMessage.Summary] =
-      backupFiber.join
-
-    override def cancel: UIO[Unit] =
-      backupFiber.interrupt.ignore *> statusQueue.shutdown *> ZIO.succeed(true)
-
-  end BackupProcess
 
   
   override def backup(commonOptions: CommonOptions, backupOptions: BackupOptions): ZIO[Scope, RepoControllerException, RepoBackupData] =
@@ -174,28 +178,33 @@ class ResticRepoControllerImpl(
         basePath = config.backupRestoreBaseDir,
         paths = config.paths,
       ).mapError { err => RepoBackupException(s"Error during restic backup execution: ${err.getMessage}", Cause.fail(err)) }
-      statusQueue <- ZIO.acquireRelease(Queue.sliding[BackupMessage.Status](100))(_.shutdown)
+      statusHub <- ZIO.acquireRelease(Hub.sliding[Take[Nothing, BackupMessage.Status]](100))(_.shutdown)
+      completed <- Promise.make[Nothing, Unit]
       backupFiber <- (
         for {
           (optSummary, error) <- backupStream
             .mapError(ex => RepoBackupException(s"Error during restic backup execution",Cause.fail(ex)))
-            .runFoldZIO[Any, RepoBackupException, (Option[BackupMessage.Summary], Cause[RepoBackupItemException])]((None, Cause.empty)) {
-            case ((optSummary, errors), msg) => msg match {
-              case msg: BackupMessage.Status => statusQueue.offer(msg) *> ZIO.succeed((optSummary, errors))
-              case msg: BackupMessage.Summary => ZIO.succeed((Some(msg), errors))
-              case msg: BackupMessage.Error =>
-                ZIO.succeed((optSummary,
-                  errors ++ Cause.fail(RepoBackupItemException(msg))))
-              case _ => ZIO.succeed((optSummary, errors))
+            .either
+            .runFoldZIO[Any, Nothing, (Option[BackupMessage.Summary], Cause[RepoControllerException])]((None, Cause.empty)) {
+              case ((optSummary, errors), Right(msg)) => msg match {
+                case msg: BackupMessage.Status =>
+                  statusHub.publish(Take.single(msg)).as((optSummary, errors))
+                case msg: BackupMessage.Summary => ZIO.succeed((Some(msg), errors))
+                case msg: BackupMessage.Error =>
+                  ZIO.succeed((optSummary,
+                    errors ++ Cause.fail(RepoBackupItemException(msg))))
+                case _ => ZIO.succeed((optSummary, errors))
+              }
+              case ((optSummary, errors), Left(streamError)) =>
+                ZIO.succeed((optSummary, errors ++ Cause.fail(streamError)))
             }
-          }.catchAllCause { cause => ZIO.succeed((None, cause)) }.ensuring(statusQueue.shutdown)
           _ <- ZIO.when(error.nonEmpty) {
             ZIO.failCause(error)
           }
           summary <- ZIO.fromOption(optSummary).mapError(_ => GeneralRepoControllerException(s"Summary not found during backup!"))
         } yield summary
-        ).forkScoped
-      backupProcess = BackupProcess(backupFiber, statusQueue)
+        ).ensuring(completed.succeed(()) *> statusHub.publish(Take.end).unit).forkScoped
+      backupProcess = ProcessDataImpl(backupFiber, statusHub, completed)
       _ <- ZIO.addFinalizer(backupProcess.cancel)
     } yield backupProcess
 
@@ -209,5 +218,3 @@ object ResticRepoControllerImpl:
              .someOrFail(new Exception(s"Restic repo configuration not found for repo named: $name"))
       } yield ResticRepoControllerImpl(config,resticCommandService)
     }
-
-

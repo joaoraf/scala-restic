@@ -27,10 +27,20 @@ final case class RepoRestoreException(override val message : String, override va
   extends RepoControllerException(message,cause)
 final case class RepoRestoreItemException(errorMessage : RestoreMessage.Error)
   extends RepoControllerException(s"Error during restore: message=${errorMessage.message}, during=${errorMessage.during}, item=${errorMessage.item}",Cause.empty)
-trait RepoRestoreData:
-  def statusHub : Hub[RestoreMessage.Status]
-  def awaitSummary : IO[RepoControllerException,RestoreMessage.Summary]
-  def cancel : UIO[Unit]
+
+trait ProcessData[Summary,Status]:
+  /*
+    This stream is live-only: it will not emit any element until the process is started and may miss elements if
+    the method is called after the process has already started.
+     */
+  def statusStream: ZStream[Any, Nothing, Status]
+
+  def awaitSummary: IO[RepoControllerException, Summary]
+
+  def cancel: UIO[Unit]
+
+type RepoRestoreData = ProcessData[RestoreMessage.Summary,RestoreMessage.Status]
+
 
 /*
 Backup
@@ -40,10 +50,7 @@ final case class RepoBackupException(override val message : String, override val
 final case class RepoBackupItemException(errorMessage : BackupMessage.Error)
   extends RepoControllerException(s"Error during backup: message=${errorMessage.message}, during=${errorMessage.during}, item=${errorMessage.item}",Cause.empty)
 
-trait RepoBackupData:
-  def statusHub : ZStream[Any,Nothing,BackupMessage.Status]
-  def awaitSummary : IO[RepoControllerException,BackupMessage.Summary]
-  def cancel : UIO[Unit]
+type RepoBackupData = ProcessData[BackupMessage.Summary,BackupMessage.Status]
 
 
 trait ResticRepoController:
@@ -56,5 +63,4 @@ trait ResticRepoController:
       ZIO[Scope,RepoControllerException,RepoRestoreData]
   def backup(commonOptions : CommonOptions = CommonOptions(), backupOptions : BackupOptions = BackupOptions()) :
       ZIO[Scope,RepoControllerException,RepoBackupData]
-
 
