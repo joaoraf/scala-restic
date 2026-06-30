@@ -6,6 +6,7 @@ import br.gov.lexml.scala_restic.data.restore.RestoreMessage
 import br.gov.lexml.scala_restic.data.snapshots.Snapshots
 import br.gov.lexml.scala_restic.options.backup.BackupOptions
 import br.gov.lexml.scala_restic.options.common.{CommonOptions, Repo}
+import br.gov.lexml.scala_restic.options.forget.ForgetOptions
 import br.gov.lexml.scala_restic.options.init.InitOptions
 import br.gov.lexml.scala_restic.options.restore.RestoreOptions
 import br.gov.lexml.scala_restic.options.snapshots.SnapshotsOptions
@@ -68,3 +69,10 @@ trait ResticCommandService:
     snapshotsOptions: SnapshotsOptions,
     password: Option[String] = None
   ): IO[Exception, Snapshots]
+
+  def forget(
+    repo : Repo,
+    commonOptions : CommonOptions = CommonOptions(),
+    forgetOptions : ForgetOptions = ForgetOptions(),
+    password : Option[String] = None
+  ) : IO[Exception, Unit]

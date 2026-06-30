@@ -8,6 +8,7 @@ import br.gov.lexml.scala_restic.data.restore.RestoreMessage
 import br.gov.lexml.scala_restic.data.snapshots.Snapshots
 import br.gov.lexml.scala_restic.options.backup.BackupOptions
 import br.gov.lexml.scala_restic.options.common.{CommonOptions, Repo}
+import br.gov.lexml.scala_restic.options.forget.ForgetOptions
 import br.gov.lexml.scala_restic.options.init.InitOptions
 import br.gov.lexml.scala_restic.options.restore.RestoreOptions
 import br.gov.lexml.scala_restic.options.snapshots.SnapshotsOptions
@@ -160,6 +161,28 @@ final class ResticCommandServiceImpl(rb: ResticCommandBuilderService) extends Re
       snapshots <- ZIO.fromEither(Snapshots.jsonCodec.decodeJson(result))
         .mapError(message => ResticException(s"Error decoding snapshots output: $message"))
     } yield snapshots
+
+  override def forget(
+    repo: Repo,
+    commonOptions: CommonOptions = CommonOptions(),
+    forgetOptions: ForgetOptions = ForgetOptions(),
+    password: Option[String] = None
+  ): IO[Exception, Unit] =
+    for {
+      process <- rb.commandBuilder(repo)
+        .options(commonOptions.withJson)
+        .stdinStringStream(passwordStream(password))
+        .redirectErrorStream(true)
+        .options(forgetOptions)
+        .command("forget")
+        .run
+      stdoutFiber <- process.stdout.stream.runDrain.fork
+      exitCode <- process.exitCode.map(_.asRestic)
+      _ <- ZIO.unless(exitCode == REC_SUCCESS) {
+        ZIO.fail(ResticException("Error forgetting snapshots", Some(exitCode)))
+      }
+      _ <- stdoutFiber.join
+    } yield ()
 
 object ResticCommandServiceImpl:
   val layer: URLayer[ResticCommandBuilderService, ResticCommandService] =

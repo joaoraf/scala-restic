@@ -5,6 +5,7 @@ import br.gov.lexml.scala_restic.command.impl.ResticCommandServiceImpl
 import br.gov.lexml.scala_restic.config.ResticConfig
 import br.gov.lexml.scala_restic.options.backup.BackupOptions
 import br.gov.lexml.scala_restic.options.common.CommonOptions
+import br.gov.lexml.scala_restic.options.forget.ForgetOptionsOverride
 import br.gov.lexml.scala_restic.options.restore.RestoreOptions
 import br.gov.lexml.scala_restic.options.snapshots.SnapshotsOptions
 import org.junit.runner.RunWith
@@ -70,8 +71,39 @@ final class ResticRepoControllerImplSpec extends ZIOSpecDefault:
             lateRestoreStatuses.isEmpty
           )
         }
+      },
+      test("forgets old snapshots using the configured overrides") {
+        withControllerFixture { fixture =>
+          for {
+            _ <- createSourceFiles(fixture.sourceDir)
+            _ <- fixture.controller.init(fixture.commonOptions)
+            firstProcess <- fixture.controller.backup(
+              fixture.commonOptions,
+              BackupOptions(tag = List(forgetTestTag))
+            )
+            firstStatusesFiber <- firstProcess.statusStream.runCollect.fork
+            firstBackup <- firstProcess.awaitSummary
+            _ <- firstStatusesFiber.join
+            _ <- ZIO.attempt(Files.writeString(fixture.sourceDir.resolve("new-file.txt"), "new snapshot contents"))
+            secondProcess <- fixture.controller.backup(
+              fixture.commonOptions,
+              BackupOptions(tag = List(forgetTestTag))
+            )
+            secondStatusesFiber <- secondProcess.statusStream.runCollect.fork
+            secondBackup <- secondProcess.awaitSummary
+            _ <- secondStatusesFiber.join
+            _ <- fixture.controller.forget(fixture.commonOptions)
+            snapshots <- fixture.controller.snapshots(
+              fixture.commonOptions,
+              SnapshotsOptions(tags = Vector(forgetTestTag))
+            )
+          } yield assertTrue(
+            firstBackup.snapshot_id != secondBackup.snapshot_id,
+            snapshots.map(_.id).toList == List(secondBackup.snapshot_id)
+          )
+        }
       }
-    )
+    ) @@ TestAspect.sequential
 
   private final case class ControllerFixture(
     controller: ResticRepoControllerImpl,
@@ -83,6 +115,7 @@ final class ResticRepoControllerImplSpec extends ZIOSpecDefault:
     Path.of(sys.env.getOrElse("RESTIC_TEST_EXECUTABLE", "/usr/bin/restic"))
 
   private val testTag = "controller-spec"
+  private val forgetTestTag = "controller-forget-spec"
 
   private def withControllerFixture[R, E](
     test: ControllerFixture => ZIO[R, E, TestResult]
@@ -102,7 +135,8 @@ final class ResticRepoControllerImplSpec extends ZIOSpecDefault:
           backupRestoreBaseDir = workDir,
           paths = NonEmptyChunk(Path.of("source")),
           backupSkipIfUnchanged = false,
-          deleteAfterRestore = false
+          deleteAfterRestore = false,
+          forgetOverrides = ForgetOptionsOverride(keepLast = Some(1))
         )
         controller = ResticRepoControllerImpl(config, service)
         commonOptions = CommonOptions(noCache = true)
