@@ -69,7 +69,6 @@ object ResticCommandBuilderService:
   val layer: ZLayer[Any, Config.Error, ResticCommandBuilderService] =
     ZLayer.fromZIO(ZIO.config(ResticConfig.config).map(ResticCommandBuilderService(_)))
 
-
 final class ResticCommandService(rb: ResticCommandBuilderService):
 
   def checkRepositoryExistence(repo: Repo, commonOptions: CommonOptions = CommonOptions(), password: Option[String] = None): ZIO[Any, Exception, Boolean] =

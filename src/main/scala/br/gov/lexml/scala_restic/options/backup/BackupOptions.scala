@@ -33,7 +33,7 @@ final case class BackupOptions(
                                 oneFileSystem : Boolean = false,
                                 parent : Option[String] = None,
                                 readConcurrency : Option[Int] = None,
-                                skipIfChanged : Boolean = false,
+                                skipIfUnchanged : Boolean = false,
                                 stdin : Boolean = false,
                                 stdinFilename : Option[Path] = None,
                                 stdinFromCommand : Boolean = false,
@@ -63,7 +63,7 @@ final case class BackupOptions(
     if(oneFileSystem) then b += "--one-file-system" else ()
     if(parent.isDefined) then b += s"--parent=$parent" else ()
     if(readConcurrency.isDefined) then b += s"--read-concurrency=${readConcurrency.get}" else ()
-    if(skipIfChanged) then b += "--skip-if-changed" else ()
+    if(skipIfUnchanged) then b += "--skip-if-unchanged" else ()
     if(stdin) then b += "--stdin" else ()
     if(stdinFilename.isDefined) then b += s"--stdin-filename=$stdinFilename" else ()
     if(stdinFromCommand) then b += "--stdin-from-command" else ()

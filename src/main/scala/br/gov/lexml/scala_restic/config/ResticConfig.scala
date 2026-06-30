@@ -12,4 +12,4 @@ final case class ResticConfig(
 
 object ResticConfig:
   import br.gov.lexml.scala_restic.misc.ZioConfigInstances.given
-  val config: Config[ResticConfig] = deriveConfig[ResticConfig]
+  val config: Config[ResticConfig] = deriveConfig[ResticConfig].nested("restic")
