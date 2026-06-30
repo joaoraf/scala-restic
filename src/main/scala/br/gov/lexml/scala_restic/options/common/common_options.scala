@@ -68,7 +68,7 @@ final case class CommonOptions(
     import DurationExtensions.*
     val b = Chunk.newBuilder[String]
     if(caCert.nonEmpty) then b ++= caCert.map(e => s"--cacert=$e") else ()
-    if(cacheDir.isDefined) then b += s"--cache-dir=$cacheDir" else ()
+    if(cacheDir.isDefined) then b += s"--cache-dir=${cacheDir.get}" else ()
     if(cleanupCache) then b += "--cleanup-cache" else ()
     if(compression != AUTO) then b += s"--compression=${compression.code}" else ()
     if(httpUserAgent.nonEmpty) then b += s"--http-user-agent=$httpUserAgent" else ()
@@ -87,4 +87,7 @@ final case class CommonOptions(
     if(passwordFile.isDefined) then b += s"--password-file=${passwordFile.get}" else ()
     if(quiet) then b += "--quiet" else ()
     if(retryLock.toMillis > 0) then b += s"--retry-lock=${retryLock.toResticArg}" else ()
+    if(tlsClientCert.isDefined) then b += s"--tls-client-cert=${tlsClientCert.get}" else ()
+    if(verbose > 0) then b += s"--verbose=$verbose" else ()
+    if(stuckRequestTimeout.toMillis > 0) then b += s"--stuck-request-timeout=${stuckRequestTimeout.toResticArg}" else ()
     b.result()
