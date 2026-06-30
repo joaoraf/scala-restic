@@ -28,9 +28,9 @@ final case class RepoRestoreException(override val message : String, override va
 final case class RepoRestoreItemException(errorMessage : RestoreMessage.Error)
   extends RepoControllerException(s"Error during restore: message=${errorMessage.message}, during=${errorMessage.during}, item=${errorMessage.item}",Cause.empty)
 trait RepoRestoreData:
-  def statusDequeue : Dequeue[RestoreMessage.Status]
+  def statusHub : Hub[RestoreMessage.Status]
   def awaitSummary : IO[RepoControllerException,RestoreMessage.Summary]
-  def cancel : Task[Unit]
+  def cancel : UIO[Unit]
 
 /*
 Backup
@@ -41,9 +41,9 @@ final case class RepoBackupItemException(errorMessage : BackupMessage.Error)
   extends RepoControllerException(s"Error during backup: message=${errorMessage.message}, during=${errorMessage.during}, item=${errorMessage.item}",Cause.empty)
 
 trait RepoBackupData:
-  def statusDequeue : Dequeue[BackupMessage.Status]
+  def statusHub : Hub[Any,Nothing,BackupMessage.Status]
   def awaitSummary : IO[RepoControllerException,BackupMessage.Summary]
-  def cancel : Task[Unit]
+  def cancel : UIO[Unit]
 
 
 trait ResticRepoController:
@@ -54,7 +54,7 @@ trait ResticRepoController:
     snapshotOptions : SnapshotsOptions = SnapshotsOptions()) : Task[Vector[Snapshot]]
   def restore(snapshotID : String = "latest", commonOptions : CommonOptions = CommonOptions(), restoreOptions : RestoreOptions = RestoreOptions()) :
       ZIO[Scope,RepoControllerException,RepoRestoreData]
-  def backup(baseDir : Path, paths : NonEmptyChunk[Path], commonOptions : CommonOptions = CommonOptions(), backupOptions : BackupOptions = BackupOptions()) :
+  def backup(commonOptions : CommonOptions = CommonOptions(), backupOptions : BackupOptions = BackupOptions()) :
       ZIO[Scope,RepoControllerException,RepoBackupData]
 
 
