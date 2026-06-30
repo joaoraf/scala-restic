@@ -41,7 +41,7 @@ final case class RepoBackupItemException(errorMessage : BackupMessage.Error)
   extends RepoControllerException(s"Error during backup: message=${errorMessage.message}, during=${errorMessage.during}, item=${errorMessage.item}",Cause.empty)
 
 trait RepoBackupData:
-  def statusHub : Hub[Any,Nothing,BackupMessage.Status]
+  def statusHub : ZStream[Any,Nothing,BackupMessage.Status]
   def awaitSummary : IO[RepoControllerException,BackupMessage.Summary]
   def cancel : UIO[Unit]
 
