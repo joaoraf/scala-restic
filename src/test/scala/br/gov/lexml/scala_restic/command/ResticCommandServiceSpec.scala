@@ -6,11 +6,11 @@ import br.gov.lexml.scala_restic.data.backup.BackupMessage
 import br.gov.lexml.scala_restic.data.restore.RestoreMessage
 import br.gov.lexml.scala_restic.options.backup.BackupOptions
 import br.gov.lexml.scala_restic.options.common.{CommonOptions, Repo}
+import br.gov.lexml.scala_restic.options.forget.ForgetOptions
 import br.gov.lexml.scala_restic.options.restore.RestoreOptions
 import br.gov.lexml.scala_restic.options.snapshots.SnapshotsOptions
 import org.junit.runner.RunWith
 import zio.*
-import zio.logging.LogFilter.LogLevelByNameConfig
 import zio.test.*
 import zio.test.Assertion.*
 import zio.test.junit.ZTestJUnitRunner
@@ -18,7 +18,6 @@ import zio.test.junit.ZTestJUnitRunner
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
-import zio.logging.{ConsoleLoggerConfig, LogFilter, LogFormat, consoleLogger}
 
 @RunWith(classOf[ZTestJUnitRunner])
 final class ResticCommandServiceSpec extends ZIOSpecDefault:
@@ -26,11 +25,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
   override val bootstrap: ZLayer[Any, Any, TestEnvironment] =
     ZLayer.make[TestEnvironment](
       testEnvironment,
-      Runtime.removeDefaultLoggers,
-      consoleLogger(ConsoleLoggerConfig(
-        LogFormat.default,
-        LogLevelByNameConfig(LogLevel.Debug)
-      ))
+      Runtime.removeDefaultLoggers
     )
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
@@ -99,7 +94,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
               basePath = fixture.workDir,
               paths = NonEmptyChunk(relativeSource)
             )
-            backupMessages <- backupStream.tap(logResticMessage("backup")).runCollect
+            backupMessages <- backupStream.runCollect
             snapshotId <- ZIO.fromOption(backupMessages.collectFirst { case summary: BackupMessage.Summary => summary.snapshot_id })
               .mapError(_ => ResticException("Backup stream did not contain a summary"))
             restoreStream <- fixture.service.restoreStream(
@@ -108,7 +103,7 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
               RestoreOptions(target = Some(restoreTarget)),
               snapshotID = s"$snapshotId:$relativeSource"
             )
-            restoreMessages <- restoreStream.tap(logResticMessage("restore")).runCollect
+            restoreMessages <- restoreStream.runCollect
           } yield assertTrue(backupMessages.exists(_.isInstanceOf[BackupMessage.Summary])) &&
             assertTrue(restoreMessages.exists(_.isInstanceOf[RestoreMessage.Summary]))
         }
@@ -157,6 +152,49 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
             assertTrue(snapshotsById(firstBackup.snapshot_id).summary.total_files_processed == source.contents.size) &&
             assertTrue(snapshotsById(secondBackup.snapshot_id).summary.total_files_processed == expandedSource.contents.size) &&
             assertTrue(snapshotsById(secondBackup.snapshot_id).summary.total_bytes_processed == 3072L)
+        }
+      },
+      test("forgets old snapshots according to the retention policy") {
+        withResticFixture { fixture =>
+          for {
+            source <- createRandomSourceTree(
+              fixture.workDir.resolve("forget-source"),
+              maxFolderDepth = 2,
+              maxFolderSize = 3,
+              numberOfFiles = 4,
+              totalSizeBytes = 1024L
+            )
+            relativeSource = fixture.workDir.relativize(source.root)
+            _ <- fixture.service.init(fixture.repo, fixture.commonOptions)
+            firstBackup <- fixture.service.backupSummary(
+              fixture.repo,
+              fixture.commonOptions,
+              BackupOptions(tag = List("forget-test")),
+              basePath = fixture.workDir,
+              paths = NonEmptyChunk(relativeSource)
+            )
+            _ <- ZIO.attempt(Files.writeString(source.root.resolve("new-file.txt"), "new snapshot contents"))
+            secondBackup <- fixture.service.backupSummary(
+              fixture.repo,
+              fixture.commonOptions,
+              BackupOptions(tag = List("forget-test")),
+              basePath = fixture.workDir,
+              paths = NonEmptyChunk(relativeSource)
+            )
+            _ <- fixture.service.forget(
+              fixture.repo,
+              fixture.commonOptions,
+              ForgetOptions(keepLast = 1)
+            )
+            snapshots <- fixture.service.snapshots(
+              fixture.repo,
+              fixture.commonOptions,
+              SnapshotsOptions(tags = Vector("forget-test"))
+            )
+          } yield assertTrue(
+            firstBackup.snapshot_id != secondBackup.snapshot_id,
+            snapshots.snapshots.map(_.id).toList == List(secondBackup.snapshot_id)
+          )
         }
       },
       suite("password passing forms")(
@@ -379,8 +417,6 @@ final class ResticCommandServiceSpec extends ZIOSpecDefault:
       finally stream.close()
     }
 
-  private def logResticMessage(command: String)(message: BackupMessage | RestoreMessage): UIO[Unit] =
-    ZIO.logDebug(s"Decoded restic $command message: $message")
 
   private def deleteRecursively(path: Path): Unit =
     if Files.exists(path) then

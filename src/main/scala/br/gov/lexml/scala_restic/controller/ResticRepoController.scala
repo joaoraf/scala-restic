@@ -6,6 +6,7 @@ import br.gov.lexml.scala_restic.data.restore.RestoreMessage
 import br.gov.lexml.scala_restic.data.snapshots.Snapshot
 import br.gov.lexml.scala_restic.options.backup.BackupOptions
 import br.gov.lexml.scala_restic.options.common.CommonOptions
+import br.gov.lexml.scala_restic.options.forget.ForgetOptions
 import br.gov.lexml.scala_restic.options.restore.RestoreOptions
 import br.gov.lexml.scala_restic.options.snapshots.SnapshotsOptions
 import zio.*
@@ -63,4 +64,5 @@ trait ResticRepoController:
       ZIO[Scope,RepoControllerException,RepoRestoreData]
   def backup(commonOptions : CommonOptions = CommonOptions(), backupOptions : BackupOptions = BackupOptions()) :
       ZIO[Scope,RepoControllerException,RepoBackupData]
+  def forget(commonOptions : CommonOptions = CommonOptions(), forgetOptions : ForgetOptions = ForgetOptions()) : Task[Unit]
 

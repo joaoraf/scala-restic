@@ -36,6 +36,8 @@ final case class ResticCommandBuilder(
 
   def options(opts: ResticOptionSource): ResticCommandBuilder = copy(args = args ++ opts.toArgs)
 
+  def redirectErrorStream(redirect: Boolean): ResticCommandBuilder = copy(redirectErrorStream = redirect)
+  
   def command(opts: String*): Command = {
     val stdin1 = stdin.mapError {
       case e: IOException => CommandError.IOError(e)

@@ -14,64 +14,14 @@ import br.gov.lexml.scala_restic.data.restore.RestoreMessage
 import br.gov.lexml.scala_restic.data.snapshots.Snapshot
 import br.gov.lexml.scala_restic.options.backup.BackupOptions
 import br.gov.lexml.scala_restic.options.common.{CommonOptions, Repo}
+import br.gov.lexml.scala_restic.options.forget.ForgetOptions
 import br.gov.lexml.scala_restic.options.restore.RestoreOptions
 import br.gov.lexml.scala_restic.options.snapshots.SnapshotsOptions
 import zio.config.derivation.kebabCase
 
 import java.nio.file.Path
 
-@kebabCase
-final case class ResticRepoControllerImplConfig(
-  name : String = "",
-  repoPath : Path,
-  backupRestoreBaseDir : Path,
-  paths : NonEmptyChunk[Path],
-  password : String = "",
-  passwordFile : Option[Path] = None,
-  host : String = "",
-  backupSkipIfUnchanged : Boolean = true,
-  readConcurrency : Int = 0,
-  deleteAfterRestore : Boolean = true,
-):
-  def makeCommonOptions(commonOptions : CommonOptions): CommonOptions =
-    commonOptions.copy(
-      insecureNoPassword = passwordOption.isEmpty && passwordFile.isEmpty,
-      passwordFile = passwordFile,
-      verbose = 1,
-      json = true
-    )
 
-  def makeBackupOptions(backupOptions : BackupOptions) : BackupOptions =
-    backupOptions.copy(
-      host = Option(host).filter(x => !x.isBlank),
-      skipIfUnchanged = backupSkipIfUnchanged,
-      readConcurrency = Option(readConcurrency).filter(_ > 0).orElse(backupOptions.readConcurrency)
-    )
-
-  def makeRestoreOptions(restoreOptions : RestoreOptions) : RestoreOptions =
-    restoreOptions.copy(
-      delete = deleteAfterRestore,
-      host = List(host).filter(x => !x.isBlank),
-      target = Some(backupRestoreBaseDir),
-    )
-
-  def passwordOption : Option[String] = Option(password).filter(x => !x.isBlank)
-
-
-object ResticRepoControllerImplConfig:
-  val config: Config[ResticRepoControllerImplConfig] = deriveConfig[ResticRepoControllerImplConfig]
-
-
-final case class ResticRepoControllerImplConfigs(
-  controllers : Map[String,ResticRepoControllerImplConfig]
-)
-
-object ResticRepoControllerImplConfigs:
-  val config: Config[ResticRepoControllerImplConfigs] = {
-    Config.table("controllers", ResticRepoControllerImplConfig.config).map { m =>
-      ResticRepoControllerImplConfigs(m.map { (name, config) => (name, config.copy(name = name)) })
-    }.nested("restic")
-  }
 
 class ResticRepoControllerImpl(
   config : ResticRepoControllerImplConfig,
@@ -204,6 +154,15 @@ class ResticRepoControllerImpl(
       backupProcess = ProcessDataImpl(backupFiber, statusHub, completed)
       _ <- ZIO.addFinalizer(backupProcess.cancel)
     } yield backupProcess
+
+  override def forget(commonOptions : CommonOptions = CommonOptions(), forgetOptions : ForgetOptions = ForgetOptions()) : Task[Unit] =
+    resticCommandService.forget(
+      repo = repo,
+      commonOptions = config.makeCommonOptions(commonOptions),
+      forgetOptions = config.makeForgetOptions(forgetOptions),
+      password = config.passwordOption
+    )
+
 
 object ResticRepoControllerImpl:
   def make(name : String) : ZIO[Scope & ResticCommandService,Throwable,ResticRepoController] =
