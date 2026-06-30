@@ -20,7 +20,7 @@ import br.gov.lexml.scala_restic.options.snapshots.SnapshotsOptions
 import java.nio.file.Path
 
 final case class ResticRepoControllerImplConfig(
-  name : String,
+  name : String = "",
   repoPath : Path,
   backupRestoreBaseDir : Path,
   paths : NonEmptyChunk[Path],
@@ -65,16 +65,11 @@ final case class ResticRepoControllerImplConfigs(
 )
 
 object ResticRepoControllerImplConfigs:
-  val config : Config[ResticRepoControllerImplConfigs] =
-    Config.listOf(ResticRepoControllerImplConfig.config).nested("restic","controllers")
-      .mapOrFail { l =>
-        val cm = l.groupBy(_.name)
-        val ambiguous = cm.values.filter(_.length > 1).map(_.map(_.name).toSet).toSet.flatten
-        if ambiguous.nonEmpty then
-          Left(Config.Error.InvalidData(Chunk("name"),s"Multiple controller configs with the same name: ${ambiguous.mkString(", ")}"))
-        else
-          Right(ResticRepoControllerImplConfigs(cm.view.mapValues(_.head).toMap))
-      }
+  val config: Config[ResticRepoControllerImplConfigs] = {
+    Config.table("controllers", ResticRepoControllerImplConfig.config).map { m =>
+      ResticRepoControllerImplConfigs(m.map { (name, config) => (name, config.copy(name = name)) })
+    }
+  }
 
 class ResticRepoControllerImpl(
   config : ResticRepoControllerImplConfig,
