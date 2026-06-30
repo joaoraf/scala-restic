@@ -209,12 +209,13 @@ class ResticRepoControllerImpl(
     } yield backupProcess
 
 object ResticRepoControllerImpl:
-  def layer(name : String) : ZLayer[ResticCommandService,Throwable,ResticRepoControllerImpl] =
-    ZLayer.scoped {
-      for {
-        resticCommandService <- ZIO.service[ResticCommandService]
-        config <-
-          ZIO.config(ResticRepoControllerImplConfigs.config).map(_.controllers.get(name))
-             .someOrFail(new Exception(s"Restic repo configuration not found for repo named: $name"))
-      } yield ResticRepoControllerImpl(config,resticCommandService)
-    }
+  def make(name : String) : ZIO[Scope & ResticCommandService,Throwable,ResticRepoController] =
+    for {
+      resticCommandService <- ZIO.service[ResticCommandService]
+      config <-
+        ZIO.config(ResticRepoControllerImplConfigs.config).map(_.controllers.get(name))
+          .someOrFail(new Exception(s"Restic repo configuration not found for repo named: $name"))
+    } yield ResticRepoControllerImpl(config, resticCommandService)
+
+  def layer(name : String) : ZLayer[ResticCommandService,Throwable,ResticRepoController] =
+    ZLayer.scoped(make(name))
